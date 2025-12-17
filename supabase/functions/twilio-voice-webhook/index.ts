@@ -105,7 +105,7 @@ serve(async (req) => {
       // Initial greeting TwiML
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thank you for calling ${escapeXml(onCallInfo.officeName)}. This is the on-call answering service.</Say>
+  <Say voice="alice">Thank you for calling the Hill Country Eye Center after hours answering service. If this is an emergency, hang up and dial 911.</Say>
   <Gather input="speech dtmf" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
     <Say voice="alice">Please briefly describe the reason for your call, or press 1 for emergencies, 2 to speak with the on-call provider, or 3 to leave a message.</Say>
   </Gather>
