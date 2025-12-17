@@ -102,14 +102,15 @@ serve(async (req) => {
         console.error('Error creating conversation:', insertError);
       }
 
-      // Initial greeting TwiML
+      // Initial greeting TwiML - listen to caller speech for AI triage
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Thank you for calling the Hill Country Eye Center after hours answering service. If this is an emergency, hang up and dial 911.</Say>
-  <Gather input="speech dtmf" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
-    <Say voice="alice">Please briefly describe the reason for your call, or press 1 for emergencies, 2 to speak with the on-call provider, or 3 to leave a message.</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
+    <Say voice="alice">Please describe the reason for your call so I can assist you.</Say>
   </Gather>
-  <Say voice="alice">I didn't receive any input. Goodbye.</Say>
+  <Say voice="alice">I didn't hear anything. Please leave a message after the beep and we will return your call the next business day.</Say>
+  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
 
       return new Response(twiml, {
@@ -122,70 +123,57 @@ serve(async (req) => {
     const oncallProviderName = existingConversation.metadata?.oncall_name || onCallName;
     const officeName = existingConversation.metadata?.office_name || onCallInfo.officeName;
 
-    // Handle user input
+    // Handle caller speech input - use AI to determine urgency
     let responseAction = 'continue';
     let twiml = '';
 
-    if (digits === '1') {
-      // Emergency - connect to on-call provider immediately
-      console.log('Emergency transfer to:', oncallProviderPhone);
-      twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">This is an emergency. Connecting you to ${escapeXml(oncallProviderName)} now. Please hold.</Say>
-  <Dial timeout="30" callerId="${to}">
-    <Number>${oncallProviderPhone}</Number>
-  </Dial>
-  <Say voice="alice">${escapeXml(oncallProviderName)} is currently unavailable. Please call 911 for emergencies or leave a message after the beep.</Say>
-  <Record maxLength="120" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" />
-</Response>`;
-      responseAction = 'emergency_transfer';
-    } else if (digits === '2') {
-      // Transfer to on-call
-      console.log('Regular transfer to:', oncallProviderPhone);
-      twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Please hold while I connect you to ${escapeXml(oncallProviderName)}.</Say>
-  <Dial timeout="30" callerId="${to}">
-    <Number>${oncallProviderPhone}</Number>
-  </Dial>
-  <Say voice="alice">${escapeXml(oncallProviderName)} is currently unavailable. Please leave a message after the beep.</Say>
-  <Record maxLength="120" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" />
-</Response>`;
-      responseAction = 'transfer';
-    } else if (digits === '3' || speechResult) {
-      // Leave message or AI conversation
-      const message = speechResult || 'Caller requested to leave a message';
+    if (speechResult) {
+      console.log('Caller speech received:', speechResult);
       
       // Update conversation with transcript
       await supabase
         .from('twilio_conversations')
         .update({
-          transcript: [...(existingConversation.transcript || []), { role: 'caller', content: message, timestamp: new Date().toISOString() }],
-          metadata: { ...existingConversation.metadata, last_input: message }
+          transcript: [...(existingConversation.transcript || []), { role: 'caller', content: speechResult, timestamp: new Date().toISOString() }],
+          metadata: { ...existingConversation.metadata, last_input: speechResult }
         })
         .eq('id', existingConversation.id);
 
-      // Use AI to generate response
-      const aiResponse = await generateAIResponse(message, existingConversation);
-      
-      twiml = `<?xml version="1.0" encoding="UTF-8"?>
+      // Use AI to determine if this is an emergency requiring immediate callback
+      const isEmergency = await analyzeUrgency(speechResult);
+      console.log('AI urgency analysis:', { speechResult, isEmergency });
+
+      if (isEmergency) {
+        // Emergency - connect to on-call provider immediately
+        console.log('Emergency detected - transferring to:', oncallProviderPhone);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${escapeXml(aiResponse)}</Say>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
-    <Say voice="alice">Is there anything else I can help you with?</Say>
-  </Gather>
-  <Say voice="alice">Thank you for calling ${escapeXml(officeName)}. Goodbye.</Say>
+  <Say voice="alice">I understand this is urgent. I am connecting you to the on-call provider now. Please hold.</Say>
+  <Dial timeout="30" callerId="${to}">
+    <Number>${oncallProviderPhone}</Number>
+  </Dial>
+  <Say voice="alice">The on-call provider is currently unavailable. Please leave a detailed message after the beep and they will call you back as soon as possible.</Say>
+  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
-      responseAction = 'ai_response';
+        responseAction = 'emergency_transfer';
+      } else {
+        // Not urgent - take a message for next business day
+        console.log('Non-urgent call - taking message');
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thank you for that information. This does not appear to be an emergency. Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day.</Say>
+  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
+</Response>`;
+        responseAction = 'message';
+      }
     } else {
-      // Default response
+      // No speech - default to leave message
       twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
-    <Say voice="alice">I'm sorry, I didn't understand. Press 1 for emergencies, 2 to speak with the on-call provider, or 3 to leave a message.</Say>
-  </Gather>
-  <Say voice="alice">Goodbye.</Say>
+  <Say voice="alice">Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day.</Say>
+  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
+      responseAction = 'message_default';
     }
 
     // Log the action
@@ -216,6 +204,78 @@ serve(async (req) => {
     });
   }
 });
+
+// AI function to analyze if caller's issue is an emergency requiring immediate callback
+async function analyzeUrgency(callerSpeech: string): Promise<boolean> {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  
+  if (!LOVABLE_API_KEY) {
+    // If no AI available, be conservative and check for emergency keywords
+    const emergencyKeywords = [
+      'emergency', 'urgent', 'severe', 'sudden', 'loss of vision', 'blind',
+      'accident', 'injury', 'trauma', 'chemical', 'burn', 'bleeding',
+      'flash', 'floaters', 'curtain', 'veil', 'pain', 'red eye', 'swollen',
+      'hit', 'struck', 'foreign object', 'can\'t see', 'double vision'
+    ];
+    const lowerSpeech = callerSpeech.toLowerCase();
+    return emergencyKeywords.some(keyword => lowerSpeech.includes(keyword));
+  }
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a medical triage AI for an ophthalmology (eye care) after-hours answering service.
+
+Your job is to determine if the caller's concern requires IMMEDIATE contact with the on-call eye doctor, or if it can wait until the next business day.
+
+URGENT/EMERGENCY (requires immediate callback):
+- Sudden vision loss or changes
+- Eye trauma, injury, or foreign objects
+- Chemical exposure to the eye
+- Severe eye pain
+- Flashes of light or sudden floaters
+- Curtain/veil over vision (possible retinal detachment)
+- Recent eye surgery complications
+- Eye infection with severe symptoms
+- Post-operative concerns within 1 week of surgery
+
+NON-URGENT (can wait for next business day callback):
+- Routine prescription refills
+- Scheduling questions
+- Minor irritation or dryness
+- Glasses or contact lens questions
+- Billing questions
+- General information requests
+- Mild redness without severe symptoms
+
+Respond with ONLY "URGENT" or "NOT_URGENT" based on the caller's description. When in doubt, err on the side of URGENT for patient safety.`
+          },
+          { role: 'user', content: callerSpeech }
+        ],
+      }),
+    });
+
+    const data = await response.json();
+    const aiResponse = data.choices?.[0]?.message?.content || '';
+    console.log('AI urgency response:', aiResponse);
+    
+    return aiResponse.toUpperCase().includes('URGENT') && !aiResponse.toUpperCase().includes('NOT_URGENT');
+  } catch (error) {
+    console.error('AI urgency analysis error:', error);
+    // On error, be conservative - if they mention anything eye-related and concerning, treat as urgent
+    const concerningKeywords = ['pain', 'vision', 'see', 'blind', 'emergency', 'urgent', 'severe'];
+    return concerningKeywords.some(keyword => callerSpeech.toLowerCase().includes(keyword));
+  }
+}
 
 async function generateAIResponse(userMessage: string, conversation: any): Promise<string> {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
