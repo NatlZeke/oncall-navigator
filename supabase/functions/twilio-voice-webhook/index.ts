@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Mock on-call data - in production this would come from the database
+// Maps Twilio phone numbers to office on-call information
+const mockOnCallData: Record<string, { officeName: string; primaryProvider: { name: string; phone: string }; backupProvider?: { name: string; phone: string } }> = {
+  '+15125281144': {
+    officeName: 'Cedar Park Main Office',
+    primaryProvider: { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
+    backupProvider: { name: 'Dr. Todd R. Shepler, M.D.', phone: '+15125551002' },
+  },
+  '+15125281155': {
+    officeName: 'Georgetown Office',
+    primaryProvider: { name: 'Dr. Chelsea Devitt, O.D., FAAO', phone: '+15125551004' },
+    backupProvider: { name: 'Dr. Nathan E. Osterman, O.D.', phone: '+15125551003' },
+  },
+};
+
+// Default fallback on-call info
+const defaultOnCall = {
+  officeName: 'On-Call Service',
+  primaryProvider: { name: 'On-Call Provider', phone: '+15125551001' },
+  backupProvider: { name: 'Backup Provider', phone: '+15125551002' },
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -26,6 +48,19 @@ serve(async (req) => {
 
     console.log('Twilio Voice Webhook received:', { callSid, from, to, callStatus, digits, speechResult });
 
+    // Get on-call information based on the called number
+    const onCallInfo = mockOnCallData[to] || defaultOnCall;
+    const primaryPhone = onCallInfo.primaryProvider.phone;
+    const backupPhone = onCallInfo.backupProvider?.phone || primaryPhone;
+
+    console.log('On-call info for', to, ':', {
+      office: onCallInfo.officeName,
+      primary: onCallInfo.primaryProvider.name,
+      primaryPhone,
+      backup: onCallInfo.backupProvider?.name,
+      backupPhone
+    });
+
     // Check if we have an existing conversation for this call
     const { data: existingConversation } = await supabase
       .from('twilio_conversations')
@@ -34,7 +69,7 @@ serve(async (req) => {
       .single();
 
     if (!existingConversation) {
-      // New call - create conversation record
+      // New call - create conversation record with on-call info
       const { data: newConversation, error: insertError } = await supabase
         .from('twilio_conversations')
         .insert({
@@ -43,7 +78,14 @@ serve(async (req) => {
           called_phone: to,
           conversation_type: 'voice',
           status: 'in_progress',
-          metadata: { initial_status: callStatus }
+          metadata: { 
+            initial_status: callStatus,
+            office_name: onCallInfo.officeName,
+            oncall_primary_name: onCallInfo.primaryProvider.name,
+            oncall_primary_phone: primaryPhone,
+            oncall_backup_name: onCallInfo.backupProvider?.name,
+            oncall_backup_phone: backupPhone
+          }
         })
         .select()
         .single();
@@ -55,7 +97,7 @@ serve(async (req) => {
       // Initial greeting TwiML
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thank you for calling. This is the on-call answering service.</Say>
+  <Say voice="alice">Thank you for calling ${escapeXml(onCallInfo.officeName)}. This is the on-call answering service.</Say>
   <Gather input="speech dtmf" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
     <Say voice="alice">Please briefly describe the reason for your call, or press 1 for emergencies, 2 to speak with the on-call provider, or 3 to leave a message.</Say>
   </Gather>
@@ -67,30 +109,46 @@ serve(async (req) => {
       });
     }
 
+    // Get on-call phones from conversation metadata
+    const oncallPrimaryPhone = existingConversation.metadata?.oncall_primary_phone || primaryPhone;
+    const oncallBackupPhone = existingConversation.metadata?.oncall_backup_phone || backupPhone;
+    const oncallPrimaryName = existingConversation.metadata?.oncall_primary_name || 'the on-call provider';
+    const officeName = existingConversation.metadata?.office_name || onCallInfo.officeName;
+
     // Handle user input
     let responseAction = 'continue';
     let twiml = '';
 
     if (digits === '1') {
       // Emergency - connect to on-call provider immediately
+      console.log('Emergency transfer to primary:', oncallPrimaryPhone);
       twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Connecting you to the on-call provider now. Please hold.</Say>
-  <Dial timeout="30">
-    <Number>${existingConversation.metadata?.oncall_phone || '+15551234567'}</Number>
+  <Say voice="alice">This is an emergency. Connecting you to ${escapeXml(oncallPrimaryName)} now. Please hold.</Say>
+  <Dial timeout="30" callerId="${to}">
+    <Number>${oncallPrimaryPhone}</Number>
   </Dial>
-  <Say voice="alice">The on-call provider is unavailable. Please call 911 for emergencies or try again later.</Say>
+  <Say voice="alice">${escapeXml(oncallPrimaryName)} is unavailable. Attempting to reach the backup provider.</Say>
+  <Dial timeout="30" callerId="${to}">
+    <Number>${oncallBackupPhone}</Number>
+  </Dial>
+  <Say voice="alice">All on-call providers are currently unavailable. Please call 911 for emergencies or leave a message after the beep.</Say>
+  <Record maxLength="120" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" />
 </Response>`;
       responseAction = 'emergency_transfer';
     } else if (digits === '2') {
       // Transfer to on-call
+      console.log('Regular transfer to primary:', oncallPrimaryPhone);
       twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please hold while I connect you to the on-call provider.</Say>
-  <Dial timeout="30">
-    <Number>${existingConversation.metadata?.oncall_phone || '+15551234567'}</Number>
+  <Say voice="alice">Please hold while I connect you to ${escapeXml(oncallPrimaryName)}.</Say>
+  <Dial timeout="30" callerId="${to}">
+    <Number>${oncallPrimaryPhone}</Number>
   </Dial>
-  <Say voice="alice">The on-call provider is currently unavailable. Please leave a message after the beep.</Say>
+  <Say voice="alice">${escapeXml(oncallPrimaryName)} is currently unavailable. Would you like to try the backup provider? Press 1 for yes, or stay on the line to leave a message.</Say>
+  <Gather input="dtmf" timeout="5" action="${supabaseUrl}/functions/v1/twilio-voice-webhook?action=backup">
+  </Gather>
+  <Say voice="alice">Please leave a message after the beep.</Say>
   <Record maxLength="120" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" />
 </Response>`;
       responseAction = 'transfer';
@@ -116,18 +174,36 @@ serve(async (req) => {
   <Gather input="speech" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
     <Say voice="alice">Is there anything else I can help you with?</Say>
   </Gather>
-  <Say voice="alice">Thank you for calling. Goodbye.</Say>
+  <Say voice="alice">Thank you for calling ${escapeXml(officeName)}. Goodbye.</Say>
 </Response>`;
       responseAction = 'ai_response';
     } else {
-      // Default response
-      twiml = `<?xml version="1.0" encoding="UTF-8"?>
+      // Check for backup transfer action
+      const url = new URL(req.url);
+      const action = url.searchParams.get('action');
+      
+      if (action === 'backup' && digits === '1') {
+        console.log('Backup transfer to:', oncallBackupPhone);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Connecting you to the backup provider now.</Say>
+  <Dial timeout="30" callerId="${to}">
+    <Number>${oncallBackupPhone}</Number>
+  </Dial>
+  <Say voice="alice">The backup provider is also unavailable. Please leave a message after the beep.</Say>
+  <Record maxLength="120" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" />
+</Response>`;
+        responseAction = 'backup_transfer';
+      } else {
+        // Default response
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="5" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
     <Say voice="alice">I'm sorry, I didn't understand. Press 1 for emergencies, 2 to speak with the on-call provider, or 3 to leave a message.</Say>
   </Gather>
   <Say voice="alice">Goodbye.</Say>
 </Response>`;
+      }
     }
 
     // Log the action
@@ -136,9 +212,9 @@ serve(async (req) => {
       .insert({
         notification_type: 'voice_interaction',
         recipient_phone: from,
-        content: { action: responseAction, digits, speechResult },
+        content: { action: responseAction, digits, speechResult, oncall_phone: oncallPrimaryPhone },
         status: 'completed',
-        metadata: { call_sid: callSid }
+        metadata: { call_sid: callSid, office: officeName }
       });
 
     return new Response(twiml, {
@@ -178,7 +254,7 @@ async function generateAIResponse(userMessage: string, conversation: any): Promi
         messages: [
           {
             role: 'system',
-            content: `You are a professional medical answering service AI. You help callers by:
+            content: `You are a professional medical answering service AI for ${conversation.metadata?.office_name || 'a medical office'}. You help callers by:
 1. Gathering basic information about their medical concern
 2. Assessing urgency (but always recommend 911 for true emergencies)
 3. Taking messages for the on-call provider
