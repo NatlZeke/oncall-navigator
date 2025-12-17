@@ -22,14 +22,17 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, Phone, Clock, User, Check, X, ArrowUp, Timer, Bell } from 'lucide-react';
+import { AlertTriangle, Phone, Clock, User, Check, ArrowUp, Timer, Bell, History } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { IncidentEscalation, EscalationSeverity } from '@/types';
+import { ProviderAcknowledgePanel } from '@/components/ProviderAcknowledgePanel';
+import { EscalationTimeline } from '@/components/EscalationTimeline';
+import { mockEscalationEvents } from '@/data/phase4MockData';
+import type { AckType } from '@/types/phase4';
 
 const severityColors: Record<EscalationSeverity, string> = {
   emergent: 'bg-red-500/20 text-red-700 border-red-500/30',
@@ -41,6 +44,13 @@ const EscalationManagementPage = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedSeverity, setSelectedSeverity] = useState<EscalationSeverity>('urgent');
   const [activeTab, setActiveTab] = useState('active');
+  const [selectedEscalationForTimeline, setSelectedEscalationForTimeline] = useState<string | null>(null);
+
+  const handleProviderAcknowledge = (ackType: AckType, notes?: string) => {
+    toast.success(`Action recorded: ${ackType}`, {
+      description: notes || 'Acknowledgement logged to escalation timeline'
+    });
+  };
 
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
@@ -179,6 +189,10 @@ const EscalationManagementPage = () => {
                   <Check className="h-4 w-4" />
                   Resolve
                 </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedEscalationForTimeline(escalation.id)} className="gap-1">
+                  <History className="h-4 w-4" />
+                  Timeline
+                </Button>
               </div>
             )}
           </div>
@@ -310,6 +324,18 @@ const EscalationManagementPage = () => {
           </TabsList>
 
           <TabsContent value="active" className="mt-4 space-y-4">
+            {/* Provider Acknowledge Panel for active escalations */}
+            {activeEscalations.length > 0 && (
+              <ProviderAcknowledgePanel
+                escalationId={activeEscalations[0].id}
+                severity={activeEscalations[0].severity}
+                initiatedAt={activeEscalations[0].initiated_at}
+                patientReference={activeEscalations[0].patient_reference}
+                currentTier={activeEscalations[0].current_tier}
+                onAcknowledge={handleProviderAcknowledge}
+              />
+            )}
+
             {activeEscalations.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center text-muted-foreground">
@@ -339,6 +365,23 @@ const EscalationManagementPage = () => {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Timeline Dialog */}
+        <Dialog open={!!selectedEscalationForTimeline} onOpenChange={() => setSelectedEscalationForTimeline(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Escalation Timeline</DialogTitle>
+              <DialogDescription>Complete event history for this escalation</DialogDescription>
+            </DialogHeader>
+            {selectedEscalationForTimeline && (
+              <EscalationTimeline
+                escalationId={selectedEscalationForTimeline}
+                events={mockEscalationEvents.filter(e => e.escalation_id === 'esc-1')}
+                onDownload={() => toast.success('Timeline exported')}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

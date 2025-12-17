@@ -28,6 +28,8 @@ import {
   MessageSquare,
   Moon,
   ClipboardList,
+  BarChart3,
+  ShieldAlert,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -65,8 +67,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
     { to: '/offices', icon: <Building2 className="h-4 w-4" />, label: 'Offices' },
     { to: '/users', icon: <Users className="h-4 w-4" />, label: 'Users' },
     { to: '/cross-coverage', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Cross-Coverage' },
+    { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Analytics' },
     { to: '/billing', icon: <CreditCard className="h-4 w-4" />, label: 'Billing & Usage' },
-    { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance' },
+    { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance Settings' },
+    { to: '/compliance-center', icon: <ShieldAlert className="h-4 w-4" />, label: 'Compliance Center' },
     { to: '/audit', icon: <FileText className="h-4 w-4" />, label: 'Audit Log' },
   ];
 
@@ -83,6 +87,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
     { to: '/holidays', icon: <Calendar className="h-4 w-4" />, label: 'Holidays' },
     { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation Paths' },
     { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Escalation Mgmt' },
+    { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Analytics' },
     { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
     { to: '/operator', icon: <Phone className="h-4 w-4" />, label: 'Operator View' },
     { to: '/twilio', icon: <MessageSquare className="h-4 w-4" />, label: 'Twilio Integration' },
