@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   CreditCard,
   Shield,
+  MessageSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -80,6 +81,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
     { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Escalation Mgmt' },
     { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
     { to: '/operator', icon: <Phone className="h-4 w-4" />, label: 'Operator View' },
+    { to: '/twilio', icon: <MessageSquare className="h-4 w-4" />, label: 'Twilio Integration' },
     { to: '/settings', icon: <Settings className="h-4 w-4" />, label: 'Settings' },
   ];
 

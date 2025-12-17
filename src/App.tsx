@@ -23,6 +23,7 @@ import CredentialingPage from "./pages/CredentialingPage";
 import CrossCoveragePage from "./pages/CrossCoveragePage";
 import BillingPage from "./pages/BillingPage";
 import CompliancePage from "./pages/CompliancePage";
+import TwilioSettingsPage from "./pages/TwilioSettingsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/cross-coverage" element={<CrossCoveragePage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/compliance" element={<CompliancePage />} />
+            <Route path="/twilio" element={<TwilioSettingsPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

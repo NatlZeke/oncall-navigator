@@ -1,1 +1,13 @@
 project_id = "tdnevlgsjgjzgokfclew"
+
+[functions.twilio-voice-webhook]
+verify_jwt = false
+
+[functions.twilio-sms-webhook]
+verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = true
+
+[functions.ai-conversation]
+verify_jwt = true
