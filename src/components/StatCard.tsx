@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
 
@@ -13,7 +14,8 @@ interface StatCardProps {
   };
 }
 
-export function StatCard({ title, value, subtitle, icon: Icon, variant = 'default', trend }: StatCardProps) {
+export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
+  ({ title, value, subtitle, icon: Icon, variant = 'default', trend }, ref) => {
   const variantStyles = {
     default: 'bg-card',
     success: 'bg-success/5 border-success/20',
@@ -29,7 +31,7 @@ export function StatCard({ title, value, subtitle, icon: Icon, variant = 'defaul
   };
 
   return (
-    <div className={cn('rounded-xl border p-5 transition-all hover:shadow-md', variantStyles[variant])}>
+    <div ref={ref} className={cn('rounded-xl border p-5 transition-all hover:shadow-md', variantStyles[variant])}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
@@ -47,4 +49,6 @@ export function StatCard({ title, value, subtitle, icon: Icon, variant = 'defaul
       </div>
     </div>
   );
-}
+});
+
+StatCard.displayName = 'StatCard';
