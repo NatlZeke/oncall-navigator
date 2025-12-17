@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { ComplianceAlertConfig } from '@/components/ComplianceAlertConfig';
 import {
   BarChart,
   Bar,
@@ -532,6 +533,9 @@ export default function CallAnalyticsDashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Alert Configuration */}
+        <ComplianceAlertConfig officeId="hill-country-eye" />
       </div>
     </MainLayout>
   );
