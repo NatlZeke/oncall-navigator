@@ -81,14 +81,34 @@ export function OphthalmologyTriageInfo() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Eye className="h-5 w-5 text-primary" />
-          <CardTitle>Ophthalmology Clinical Decision Tree</CardTitle>
+          <CardTitle>Ophthalmology-Specific Clinical Decision Tree</CardTitle>
         </div>
         <CardDescription>
-          All after-hours calls are processed through this ophthalmology-specific triage protocol.
-          The AI agent enforces these questions in order and cannot skip them.
+          All after-hours calls are processed through this <strong>ophthalmology-specific</strong> triage protocol.
+          The AI agent enforces these questions in a fixed order and cannot bypass them.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Eye Red Flags - EXPLICIT */}
+        <div className="p-4 rounded-lg bg-destructive/5 border border-destructive/20">
+          <h4 className="font-semibold mb-2 flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            Eye-Specific Red Flags Evaluated
+          </h4>
+          <p className="text-sm text-muted-foreground mb-3">
+            The system explicitly screens for these ophthalmologic emergencies:
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {['Sudden vision loss', 'Flashes & floaters with curtain/shadow', 'Severe eye pain', 
+              'Post-op vision change or pain', 'Trauma or chemical exposure', 'Acute angle closure'].map((flag) => (
+              <div key={flag} className="flex items-center gap-2 text-sm">
+                <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                <span>{flag}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Intake Flow */}
         <div className="p-4 rounded-lg bg-muted/50 border">
           <h4 className="font-semibold mb-3 flex items-center gap-2">

@@ -22,25 +22,25 @@ const flowSteps = [
   {
     icon: Bot,
     label: 'AI Intake',
-    description: 'Collects name, symptoms, triage signals',
+    description: 'Collects name, symptoms, eye red flags',
     color: 'text-primary'
   },
   {
     icon: ClipboardCheck,
-    label: 'Triage Decision',
-    description: 'Classifies urgency based on symptoms',
+    label: 'Eye-Specific Triage',
+    description: 'Classifies urgency using ophthalmology criteria',
     color: 'text-warning'
   },
   {
     icon: MessageSquare,
-    label: 'Summary Created',
-    description: 'Structured summary sent to doctor',
+    label: 'Summary Delivered',
+    description: 'Structured summary sent to doctor FIRST',
     color: 'text-success'
   },
   {
     icon: UserCheck,
     label: 'Doctor Contacted',
-    description: 'Call connected after summary delivery',
+    description: 'Call connected only after summary',
     color: 'text-success'
   }
 ];
@@ -49,17 +49,17 @@ const benefits = [
   {
     icon: Clock,
     title: 'Reduces Unnecessary Wake-Ups',
-    description: 'Administrative and non-urgent calls are deflected to business hours or voicemail.'
+    description: 'Administrative and non-urgent eye issues are deflected to business hours or voicemail.'
   },
   {
     icon: Shield,
-    title: 'Protects from Blind Call-Ins',
-    description: 'Doctors receive a structured summary before any call is connected.'
+    title: 'No Blind Call-Ins',
+    description: 'On-call physicians are never connected until a structured summary is delivered.'
   },
   {
     icon: CheckCircle,
-    title: 'Faster Emergency Response',
-    description: 'True emergencies are identified immediately and escalated with full context.'
+    title: 'Urgent Eye Emergencies Reach Doctors Faster',
+    description: 'True emergencies like sudden vision loss are identified immediately with full context.'
   }
 ];
 
