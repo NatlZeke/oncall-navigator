@@ -254,27 +254,45 @@ export function MainLayout({ children }: { children: ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 p-6">
-          {/* Breadcrumbs */}
-          <Breadcrumb className="mb-6">
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/" className="flex items-center gap-1.5">
-                    <Home className="h-3.5 w-3.5" />
-                    {isCompanyLevel ? 'Company' : 'Office'}
-                  </Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              {location.pathname !== '/' && (
-                <>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>{currentPageLabel}</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </>
-              )}
-            </BreadcrumbList>
-          </Breadcrumb>
+          {/* Header with breadcrumbs and after-hours number */}
+          <div className="flex items-center justify-between mb-6">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <Link to="/" className="flex items-center gap-1.5">
+                      <Home className="h-3.5 w-3.5" />
+                      {isCompanyLevel ? 'Company' : 'Office'}
+                    </Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                {location.pathname !== '/' && (
+                  <>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{currentPageLabel}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </>
+                )}
+              </BreadcrumbList>
+            </Breadcrumb>
+            
+            {/* After-Hours Number - shown for office level */}
+            {!isCompanyLevel && (
+              <div className="flex items-center gap-2 text-right">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">After Hours</p>
+                  <a 
+                    href="tel:+17372521937" 
+                    className="text-lg font-semibold text-primary hover:underline"
+                  >
+                    (737) 252-1937
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
           {children}
         </main>
       </div>
