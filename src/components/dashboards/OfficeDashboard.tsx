@@ -1,7 +1,8 @@
-import { Clock, AlertTriangle, FileText, ChevronRight, Calendar } from 'lucide-react';
+import { Clock, AlertTriangle, FileText, ChevronRight, Calendar, Bot, Phone, BarChart3, ClipboardList } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { StatCard } from '@/components/StatCard';
 import { OnCallCard } from '@/components/OnCallCard';
+import { HeroSection } from '@/components/HeroSection';
 import { getCurrentOnCall, getServiceLinesForOffice, getShiftsForOffice } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +33,9 @@ export function OfficeDashboard() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Hero Section */}
+      <HeroSection />
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -48,6 +52,38 @@ export function OfficeDashboard() {
             <Clock className="h-4 w-4" />
             Operator View
           </Button>
+        </Link>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid gap-4 sm:grid-cols-4">
+        <Link to="/call-logs" className="block">
+          <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
+            <ClipboardList className="h-6 w-6 text-primary mb-2" />
+            <h3 className="font-semibold text-sm">Call Logs</h3>
+            <p className="text-xs text-muted-foreground">View call history</p>
+          </div>
+        </Link>
+        <Link to="/escalation-management" className="block">
+          <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
+            <AlertTriangle className="h-6 w-6 text-warning mb-2" />
+            <h3 className="font-semibold text-sm">Active Escalations</h3>
+            <p className="text-xs text-muted-foreground">Manage alerts</p>
+          </div>
+        </Link>
+        <Link to="/after-hours" className="block">
+          <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
+            <Calendar className="h-6 w-6 text-primary mb-2" />
+            <h3 className="font-semibold text-sm">On-Call Schedule</h3>
+            <p className="text-xs text-muted-foreground">View schedule</p>
+          </div>
+        </Link>
+        <Link to="/sla-dashboard" className="block">
+          <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
+            <BarChart3 className="h-6 w-6 text-success mb-2" />
+            <h3 className="font-semibold text-sm">SLA Reports</h3>
+            <p className="text-xs text-muted-foreground">Performance</p>
+          </div>
         </Link>
       </div>
 
