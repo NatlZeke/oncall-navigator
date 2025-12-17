@@ -262,6 +262,8 @@ serve(async (req) => {
             twimlResponse = generateAdministrativeDeflection(onCallInfo.officeName);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
             await logNotification(supabase, 'administrative_deflection', callerPhone, { complaint: speechResult }, 'deflected');
+            // Log safety message delivered for compliance
+            await logSafetyMessageDelivered(supabase, callSid, callerPhone);
           } else {
             // Start structured clinical intake questions
             intakeData.intakeQuestionIndex = 0;
@@ -296,6 +298,8 @@ serve(async (req) => {
             if (intakeData.triageLevel === 'nonUrgent') {
               twimlResponse = generateVoicemailPrompt(supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+              // Log safety message delivered for compliance
+              await logSafetyMessageDelivered(supabase, callSid, callerPhone);
             } else {
               twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
@@ -316,6 +320,8 @@ serve(async (req) => {
             recordingUrl, 
             triageLevel: intakeData.triageLevel 
           }, 'recorded');
+          // Log safety message delivered for compliance (delivered again in confirmation)
+          await logSafetyMessageDelivered(supabase, callSid, callerPhone);
         } else {
           twimlResponse = generateVoicemailPrompt(supabaseUrl);
         }
@@ -350,14 +356,33 @@ async function updateConversation(supabase: any, callSid: string, transcript: an
     .eq('call_sid', callSid);
 }
 
-async function logNotification(supabase: any, type: string, phone: string, content: any, status: string) {
+async function logNotification(supabase: any, type: string, phone: string, content: any, status: string, metadata?: any) {
   await supabase.from('notification_logs').insert({
     notification_type: type,
     recipient_phone: phone,
     content,
     status,
-    office_id: 'hill-country-eye'
+    office_id: 'hill-country-eye',
+    metadata: {
+      ...metadata,
+      logged_at: new Date().toISOString()
+    }
   });
+}
+
+// Log safety message delivery for compliance
+async function logSafetyMessageDelivered(supabase: any, callSid: string, phone: string) {
+  await logNotification(
+    supabase, 
+    'safety_message_delivered', 
+    phone, 
+    { 
+      message: SAFETY_NET_MESSAGE,
+      call_sid: callSid 
+    }, 
+    'delivered',
+    { compliance_verified: true }
+  );
 }
 
 function classifyAsAdministrative(text: string): boolean {

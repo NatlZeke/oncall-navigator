@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -66,49 +67,108 @@ function NavItem({ to, icon, label, active }: NavItemProps) {
   );
 }
 
+function NavSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 export function MainLayout({ children }: { children: ReactNode }) {
   const { currentUser, isCompanyLevel } = useApp();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const companyNavItems = [
-    { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
-    { to: '/offices', icon: <Building2 className="h-4 w-4" />, label: 'Offices' },
-    { to: '/users', icon: <Users className="h-4 w-4" />, label: 'Users' },
-    { to: '/cross-coverage', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Cross-Coverage' },
-    { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Analytics' },
-    { to: '/billing', icon: <CreditCard className="h-4 w-4" />, label: 'Billing & Usage' },
-    { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance Settings' },
-    { to: '/compliance-center', icon: <ShieldAlert className="h-4 w-4" />, label: 'Compliance Center' },
-    { to: '/audit', icon: <FileText className="h-4 w-4" />, label: 'Audit Log' },
+  // Company navigation - grouped
+  const companyNavGroups = [
+    {
+      title: 'Overview',
+      items: [
+        { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
+        { to: '/offices', icon: <Building2 className="h-4 w-4" />, label: 'Offices' },
+        { to: '/users', icon: <Users className="h-4 w-4" />, label: 'Users' },
+      ],
+    },
+    {
+      title: 'Operations',
+      items: [
+        { to: '/cross-coverage', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Cross-Coverage' },
+        { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Analytics' },
+      ],
+    },
+    {
+      title: 'Compliance',
+      items: [
+        { to: '/compliance-center', icon: <ShieldAlert className="h-4 w-4" />, label: 'Compliance Center' },
+        { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance Settings' },
+        { to: '/audit', icon: <FileText className="h-4 w-4" />, label: 'Audit Log' },
+      ],
+    },
+    {
+      title: 'Settings',
+      items: [
+        { to: '/billing', icon: <CreditCard className="h-4 w-4" />, label: 'Billing & Usage' },
+      ],
+    },
   ];
 
-  const officeNavItems = [
-    { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
-    { to: '/after-hours', icon: <Moon className="h-4 w-4" />, label: 'After-Hours Schedule' },
-    { to: '/call-logs', icon: <ClipboardList className="h-4 w-4" />, label: 'Call Logs' },
-    { to: '/calendar', icon: <Calendar className="h-4 w-4" />, label: 'On-Call Calendar' },
-    { to: '/my-shifts', icon: <CalendarDays className="h-4 w-4" />, label: 'My Shifts' },
-    { to: '/swap-requests', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Swap Requests' },
-    { to: '/availability', icon: <Umbrella className="h-4 w-4" />, label: 'Availability (PTO)' },
-    { to: '/publish', icon: <Activity className="h-4 w-4" />, label: 'Publish Schedule' },
-    { to: '/service-lines', icon: <AlertTriangle className="h-4 w-4" />, label: 'Service Lines' },
-    { to: '/holidays', icon: <Calendar className="h-4 w-4" />, label: 'Holidays' },
-    { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation Paths' },
-    { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Escalation Mgmt' },
-    { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Analytics' },
-    { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
-    { to: '/operator', icon: <Phone className="h-4 w-4" />, label: 'Operator View' },
-    { to: '/twilio', icon: <MessageSquare className="h-4 w-4" />, label: 'Twilio Integration' },
-    { to: '/settings', icon: <Settings className="h-4 w-4" />, label: 'Settings' },
+  // Office navigation - grouped
+  const officeNavGroups = [
+    {
+      title: 'Overview',
+      items: [
+        { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
+        { to: '/operator', icon: <Phone className="h-4 w-4" />, label: 'Operator View' },
+      ],
+    },
+    {
+      title: 'Escalations',
+      items: [
+        { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Active Escalations' },
+        { to: '/call-logs', icon: <ClipboardList className="h-4 w-4" />, label: 'Call Logs' },
+        { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Reports' },
+      ],
+    },
+    {
+      title: 'Scheduling',
+      items: [
+        { to: '/after-hours', icon: <Moon className="h-4 w-4" />, label: 'After-Hours Schedule' },
+        { to: '/calendar', icon: <Calendar className="h-4 w-4" />, label: 'On-Call Calendar' },
+        { to: '/my-shifts', icon: <CalendarDays className="h-4 w-4" />, label: 'My Shifts' },
+        { to: '/swap-requests', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Swap Requests' },
+        { to: '/availability', icon: <Umbrella className="h-4 w-4" />, label: 'Availability (PTO)' },
+        { to: '/publish', icon: <Activity className="h-4 w-4" />, label: 'Publish Schedule' },
+      ],
+    },
+    {
+      title: 'Configuration',
+      items: [
+        { to: '/service-lines', icon: <AlertTriangle className="h-4 w-4" />, label: 'Service Lines' },
+        { to: '/holidays', icon: <Calendar className="h-4 w-4" />, label: 'Holidays' },
+        { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation Paths' },
+        { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
+      ],
+    },
+    {
+      title: 'Integration',
+      items: [
+        { to: '/twilio', icon: <MessageSquare className="h-4 w-4" />, label: 'Twilio Integration' },
+        { to: '/settings', icon: <Settings className="h-4 w-4" />, label: 'Settings' },
+      ],
+    },
   ];
 
-  const navItems = isCompanyLevel ? companyNavItems : officeNavItems;
+  const navGroups = isCompanyLevel ? companyNavGroups : officeNavGroups;
+  const allNavItems = navGroups.flatMap((g) => g.items);
 
   const currentPageLabel = useMemo(() => {
-    const currentItem = navItems.find((item) => item.to === location.pathname);
+    const currentItem = allNavItems.find((item) => item.to === location.pathname);
     return currentItem?.label || 'Page';
-  }, [navItems, location.pathname]);
+  }, [allNavItems, location.pathname]);
 
   const initials = currentUser?.full_name
     ?.split(' ')
@@ -147,15 +207,19 @@ export function MainLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 p-4">
-          {navItems.map((item) => (
-            <NavItem
-              key={item.to}
-              to={item.to}
-              icon={item.icon}
-              label={item.label}
-              active={location.pathname === item.to}
-            />
+        <nav className="flex-1 overflow-y-auto p-4 space-y-6">
+          {navGroups.map((group) => (
+            <NavSection key={group.title} title={group.title}>
+              {group.items.map((item) => (
+                <NavItem
+                  key={item.to}
+                  to={item.to}
+                  icon={item.icon}
+                  label={item.label}
+                  active={location.pathname === item.to}
+                />
+              ))}
+            </NavSection>
           ))}
         </nav>
 

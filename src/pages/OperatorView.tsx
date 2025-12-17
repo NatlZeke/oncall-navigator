@@ -1,23 +1,32 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { mockUsers } from '@/data/mockData';
-import { Phone, User, Clock, AlertCircle, Moon } from 'lucide-react';
+import { Phone, User, Clock, AlertCircle, Moon, Shield, AlertTriangle } from 'lucide-react';
 import { format, isWeekend } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 // Mock single on-call per office (matching webhook data)
 const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: string; afterHoursEnd: string }> = {
   'office-1': {
-    providerId: 'user-1', // Dr. Vincent A. Restivo
+    providerId: 'user-1',
     afterHoursStart: '17:00',
     afterHoursEnd: '08:00',
   },
   'office-2': {
-    providerId: 'user-4', // Dr. Chelsea Devitt
+    providerId: 'user-4',
     afterHoursStart: '17:00',
     afterHoursEnd: '08:00',
   },
 };
+
+// Mock active escalations
+const mockActiveEscalations: Array<{
+  id: string;
+  status: 'initiated' | 'summary_sent' | 'acknowledged';
+  triageLevel: 'emergent' | 'urgent';
+  initiatedAt: string;
+}> = [];
 
 const OperatorView = () => {
   const { currentOffice, offices, setCurrentOffice, setIsCompanyLevel } = useApp();
@@ -73,7 +82,12 @@ const OperatorView = () => {
       <header className="sticky top-0 z-50 bg-primary text-primary-foreground px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs opacity-80">Operator View</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs opacity-80">Operator View</p>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary-foreground/20 text-primary-foreground border-0">
+                READ-ONLY
+              </Badge>
+            </div>
             <h1 className="text-lg font-semibold">{currentOffice.name}</h1>
           </div>
           <div className="text-right">
@@ -89,6 +103,14 @@ const OperatorView = () => {
           <AlertCircle className="h-5 w-5 shrink-0" />
           <p className="text-sm font-medium">
             For true emergencies, call 911 first, then contact on-call provider.
+          </p>
+        </div>
+
+        {/* Read-only notice */}
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border">
+          <Shield className="h-5 w-5 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            This view is read-only. No PHI is displayed. Contact admin for export requests.
           </p>
         </div>
 
@@ -109,6 +131,41 @@ const OperatorView = () => {
             </p>
           </div>
         </div>
+
+        {/* Active Escalations (if any) */}
+        {mockActiveEscalations.length > 0 && (
+          <section>
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              Active Escalations
+            </h2>
+            <div className="space-y-3">
+              {mockActiveEscalations.map((esc) => (
+                <div 
+                  key={esc.id} 
+                  className={cn(
+                    'p-4 rounded-xl border',
+                    esc.triageLevel === 'emergent' 
+                      ? 'bg-destructive/5 border-destructive/20' 
+                      : 'bg-warning/5 border-warning/20'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <Badge variant={esc.triageLevel === 'emergent' ? 'destructive' : 'outline'}>
+                      {esc.triageLevel.toUpperCase()}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {esc.status === 'acknowledged' ? 'Doctor Engaged' : 'Pending'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Started {format(new Date(esc.initiatedAt), 'h:mm a')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Single On-Call Provider */}
         <section>
@@ -175,6 +232,14 @@ const OperatorView = () => {
             </div>
           </a>
         </section>
+
+        {/* Safety Footer */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t">
+          <p className="text-xs text-center text-muted-foreground">
+            <Shield className="h-3 w-3 inline mr-1" />
+            Operator view is read-only • No exports • No PHI displayed
+          </p>
+        </div>
       </main>
     </div>
   );
