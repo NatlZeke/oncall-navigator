@@ -21,6 +21,7 @@ import { OphthalmologyTriageInfo } from '@/components/OphthalmologyTriageInfo';
 import { CallFlowVisualization, EscalationStatusIndicators } from '@/components/CallFlowVisualization';
 import { DemoMode } from '@/components/DemoMode';
 import { TriageFlowChart } from '@/components/TriageFlowChart';
+import { RealtimeCallLog } from '@/components/RealtimeCallLog';
 
 // Mock single on-call per office (matching webhook data)
 const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: string; afterHoursEnd: string }> = {
@@ -257,6 +258,9 @@ const OperatorView = () => {
                 </div>
               )}
             </section>
+
+            {/* Real-time Call Log */}
+            <RealtimeCallLog />
 
             {/* Call Flow - Compact */}
             <CallFlowVisualization compact showBenefits={false} />
