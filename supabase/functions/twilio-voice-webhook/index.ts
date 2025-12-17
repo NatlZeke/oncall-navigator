@@ -6,36 +6,113 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mock on-call data - ONE provider per office (not per service line)
-// Maps Twilio phone numbers to office on-call information
-// After-hours schedule: weekdays 5pm-8am, weekends all day
+// Mock on-call data - ONE provider per office
 const mockOnCallData: Record<string, { 
   officeName: string; 
+  serviceLine: string;
   onCallProvider: { name: string; phone: string };
-  afterHoursStart: string; // e.g., "17:00" (5pm)
-  afterHoursEnd: string;   // e.g., "08:00" (8am next day)
+  afterHoursStart: string;
+  afterHoursEnd: string;
 }> = {
   '+15125281144': {
-    officeName: 'Cedar Park Main Office',
+    officeName: 'Hill Country Eye Center - Cedar Park',
+    serviceLine: 'General Ophthalmology',
     onCallProvider: { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
     afterHoursStart: '17:00',
     afterHoursEnd: '08:00',
   },
   '+15125281155': {
-    officeName: 'Georgetown Office', 
+    officeName: 'Hill Country Eye Center - Georgetown', 
+    serviceLine: 'General Ophthalmology',
     onCallProvider: { name: 'Dr. Chelsea Devitt, O.D., FAAO', phone: '+15125551004' },
     afterHoursStart: '17:00',
     afterHoursEnd: '08:00',
   },
 };
 
-// Default fallback on-call info
 const defaultOnCall = {
-  officeName: 'On-Call Service',
+  officeName: 'Hill Country Eye Center',
+  serviceLine: 'General Ophthalmology',
   onCallProvider: { name: 'On-Call Provider', phone: '+15125551001' },
   afterHoursStart: '17:00',
   afterHoursEnd: '08:00',
 };
+
+// Mandatory structured intake questions for ophthalmology triage
+const INTAKE_QUESTIONS = [
+  "Are you having vision loss or sudden vision changes?",
+  "Are you experiencing eye pain? If yes, is it mild, moderate, or severe?",
+  "Do you see flashes, floaters, or a curtain or shadow in your vision?",
+  "Is there redness or discharge from your eye?",
+  "Was there any trauma or chemical exposure to your eye?",
+  "Did this start suddenly or gradually?",
+  "Have you had eye surgery recently?"
+];
+
+// 4-tier triage classification criteria
+const TRIAGE_CRITERIA = {
+  emergent: [
+    'sudden vision loss', 'acute vision loss', 'can\'t see', 'blind', 'lost vision',
+    'flashes with curtain', 'shadow in vision', 'curtain over vision', 'veil over',
+    'severe eye pain', 'extreme pain', 'worst pain', 'excruciating',
+    'post-op vision loss', 'surgery and can\'t see', 'after surgery blind',
+    'chemical in eye', 'chemical exposure', 'acid', 'bleach', 'alkali', 'chemical burn',
+    'trauma to eye', 'hit in eye', 'something in eye', 'foreign object',
+    'acute angle', 'halos around lights', 'nausea with eye pain', 'vomiting with eye'
+  ],
+  urgent: [
+    'worsening vision', 'vision getting worse', 'blurrier', 'more blurry',
+    'increasing pain', 'pain getting worse', 'moderate pain',
+    'increasing redness', 'more red', 'very red',
+    'post-op concern', 'after surgery', 'recent surgery', 'surgery last week',
+    'new floaters', 'new flashes', 'more floaters'
+  ],
+  nonUrgent: [
+    'mild irritation', 'slight discomfort', 'minor',
+    'dry eye', 'dry eyes', 'gritty feeling',
+    'stable floaters', 'floaters for years', 'always had floaters',
+    'not getting worse', 'same as before', 'no change',
+    'mild redness', 'little red'
+  ],
+  administrative: [
+    'billing', 'bill', 'payment', 'insurance', 'cost', 'price',
+    'schedule', 'appointment', 'reschedule', 'cancel appointment',
+    'refill', 'prescription', 'medication', 'drops',
+    'glasses', 'contacts', 'contact lenses', 'frames'
+  ]
+};
+
+// Safety-net message required at end of ALL clinical calls
+const SAFETY_NET_MESSAGE = "If your symptoms worsen or you experience sudden vision loss, severe pain, or a curtain in your vision, please hang up and go immediately to the nearest emergency room or call 911.";
+
+// Intake data structure
+interface IntakeData {
+  patientName?: string;
+  dateOfBirth?: string;
+  callbackNumber?: string;
+  isEstablishedPatient?: boolean;
+  hasRecentSurgery?: boolean;
+  surgeryDate?: string;
+  primaryComplaint?: string;
+  symptoms: string[];
+  responses: Record<string, string>;
+  triageLevel?: 'emergent' | 'urgent' | 'nonUrgent' | 'administrative';
+  intakeQuestionIndex: number;
+}
+
+// Pre-call summary structure
+interface PreCallSummary {
+  patientName: string;
+  dateOfBirth: string;
+  callbackNumber: string;
+  isEstablishedPatient: boolean;
+  hasRecentSurgery: boolean;
+  primaryComplaint: string;
+  symptoms: string[];
+  triageLevel: string;
+  officeName: string;
+  serviceLine: string;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -44,445 +121,495 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const formData = await req.formData();
     const callSid = formData.get('CallSid') as string;
-    const from = formData.get('From') as string;
-    const to = formData.get('To') as string;
-    const callStatus = formData.get('CallStatus') as string;
-    const digits = formData.get('Digits') as string;
+    const callerPhone = formData.get('From') as string;
+    const calledPhone = formData.get('To') as string;
     const speechResult = formData.get('SpeechResult') as string;
+    const digits = formData.get('Digits') as string;
+    const recordingUrl = formData.get('RecordingUrl') as string;
 
-    console.log('Twilio Voice Webhook received:', { callSid, from, to, callStatus, digits, speechResult });
+    console.log('Twilio Voice Webhook:', { callSid, callerPhone, calledPhone, speechResult: speechResult?.substring(0, 50), digits });
 
-    // Get on-call information based on the called number (ONE provider per office)
-    const onCallInfo = mockOnCallData[to] || defaultOnCall;
-    const onCallPhone = onCallInfo.onCallProvider.phone;
-    const onCallName = onCallInfo.onCallProvider.name;
+    const onCallInfo = mockOnCallData[calledPhone] || defaultOnCall;
 
-    console.log('On-call info for', to, ':', {
-      office: onCallInfo.officeName,
-      onCall: onCallName,
-      phone: onCallPhone,
-      afterHours: `${onCallInfo.afterHoursStart} - ${onCallInfo.afterHoursEnd}`
-    });
-
-    // Check if we have an existing conversation for this call
-    const { data: existingConversation } = await supabase
+    // Get or create conversation record
+    let { data: conversation } = await supabase
       .from('twilio_conversations')
       .select('*')
       .eq('call_sid', callSid)
       .single();
 
-    if (!existingConversation) {
-      // New call - create conversation record with on-call info
-      const { data: newConversation, error: insertError } = await supabase
+    if (!conversation) {
+      const { data: newConversation, error } = await supabase
         .from('twilio_conversations')
         .insert({
           call_sid: callSid,
-          caller_phone: from,
-          called_phone: to,
+          caller_phone: callerPhone,
+          called_phone: calledPhone,
           conversation_type: 'voice',
           status: 'in_progress',
-          metadata: { 
-            initial_status: callStatus,
+          transcript: [],
+          metadata: {
             office_name: onCallInfo.officeName,
-            oncall_name: onCallName,
-            oncall_phone: onCallPhone,
-            after_hours_start: onCallInfo.afterHoursStart,
-            after_hours_end: onCallInfo.afterHoursEnd
+            service_line: onCallInfo.serviceLine,
+            oncall_name: onCallInfo.onCallProvider.name,
+            oncall_phone: onCallInfo.onCallProvider.phone,
+            stage: 'welcome',
+            intake_data: {
+              symptoms: [],
+              responses: {},
+              intakeQuestionIndex: -1
+            } as IntakeData
           }
         })
         .select()
         .single();
 
-      if (insertError) {
-        console.error('Error creating conversation:', insertError);
+      if (error) {
+        console.error('Error creating conversation:', error);
+        throw error;
       }
-
-      // Initial greeting TwiML - listen to caller speech for AI triage
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Thank you for calling the Hill Country Eye Center after hours answering service. If this is an emergency, hang up and dial 911.</Say>
-  <Gather input="speech" timeout="8" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
-    <Say voice="alice">Please describe the reason for your call so I can assist you.</Say>
-  </Gather>
-  <Say voice="alice">I didn't hear anything. Please leave a message after the beep and we will return your call the next business day.</Say>
-  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
-</Response>`;
-
-      return new Response(twiml, {
-        headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
-      });
+      conversation = newConversation;
     }
 
-    // Get on-call info from conversation metadata (single provider per office)
-    const oncallProviderPhone = existingConversation.metadata?.oncall_phone || onCallPhone;
-    const oncallProviderName = existingConversation.metadata?.oncall_name || onCallName;
-    const officeName = existingConversation.metadata?.office_name || onCallInfo.officeName;
+    const metadata = conversation.metadata as any;
+    const intakeData: IntakeData = metadata?.intake_data || {
+      symptoms: [],
+      responses: {},
+      intakeQuestionIndex: -1
+    };
+    const transcript = (conversation.transcript as any[]) || [];
+    const stage = metadata?.stage || 'welcome';
 
-    // Get conversation state
-    const conversationStage = existingConversation.metadata?.stage || 'initial';
-    const transcript = existingConversation.transcript || [];
+    let twimlResponse: string;
 
-    // Handle caller speech input - use AI decision tree
-    let responseAction = 'continue';
-    let twiml = '';
+    // Process based on conversation stage
+    switch (stage) {
+      case 'welcome':
+        twimlResponse = generateWelcomeResponse(onCallInfo.officeName, supabaseUrl);
+        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
+        break;
 
-    if (speechResult) {
-      console.log('Caller speech received:', speechResult, 'Stage:', conversationStage);
-      
-      // Add to transcript
-      const updatedTranscript = [...transcript, { role: 'caller', content: speechResult, timestamp: new Date().toISOString() }];
-      
-      // Use AI to analyze and determine next step
-      const aiDecision = await analyzeConversation(updatedTranscript, existingConversation.metadata);
-      console.log('AI decision:', aiDecision);
+      case 'collect_name':
+        if (speechResult) {
+          intakeData.patientName = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generateCollectDOBResponse(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_dob', intake_data: intakeData });
+        } else {
+          twimlResponse = generateCollectNameResponse(supabaseUrl);
+        }
+        break;
 
-      // Update conversation with transcript and stage
-      await supabase
-        .from('twilio_conversations')
-        .update({
-          transcript: updatedTranscript,
-          metadata: { 
-            ...existingConversation.metadata, 
-            last_input: speechResult,
-            stage: aiDecision.nextStage,
-            urgency_assessment: aiDecision.isUrgent
+      case 'collect_dob':
+        if (speechResult || digits) {
+          intakeData.dateOfBirth = speechResult || digits;
+          transcript.push({ role: 'caller', content: speechResult || digits, timestamp: new Date().toISOString() });
+          twimlResponse = generateCollectCallbackResponse(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_callback', intake_data: intakeData });
+        } else {
+          twimlResponse = generateCollectDOBResponse(supabaseUrl);
+        }
+        break;
+
+      case 'collect_callback':
+        if (speechResult || digits) {
+          intakeData.callbackNumber = speechResult || digits || callerPhone;
+          transcript.push({ role: 'caller', content: speechResult || digits, timestamp: new Date().toISOString() });
+          twimlResponse = generateEstablishedPatientQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_established', intake_data: intakeData });
+        } else {
+          twimlResponse = generateCollectCallbackResponse(supabaseUrl);
+        }
+        break;
+
+      case 'collect_established':
+        if (speechResult) {
+          const isEstablished = /yes|established|patient|am|i am/i.test(speechResult);
+          intakeData.isEstablishedPatient = isEstablished;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generateSurgeryQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_surgery', intake_data: intakeData });
+        } else {
+          twimlResponse = generateEstablishedPatientQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'collect_surgery':
+        if (speechResult) {
+          const hasSurgery = /yes|surgery|operation|procedure|had/i.test(speechResult);
+          intakeData.hasRecentSurgery = hasSurgery;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generatePrimaryComplaintQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_complaint', intake_data: intakeData });
+        } else {
+          twimlResponse = generateSurgeryQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'collect_complaint':
+        if (speechResult) {
+          intakeData.primaryComplaint = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Check if administrative
+          if (classifyAsAdministrative(speechResult)) {
+            intakeData.triageLevel = 'administrative';
+            twimlResponse = generateAdministrativeDeflection(onCallInfo.officeName);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+            await logNotification(supabase, 'administrative_deflection', callerPhone, { complaint: speechResult }, 'deflected');
+          } else {
+            // Start structured clinical intake questions
+            intakeData.intakeQuestionIndex = 0;
+            twimlResponse = generateIntakeQuestion(0, supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'intake_questions', intake_data: intakeData });
           }
-        })
-        .eq('id', existingConversation.id);
+        } else {
+          twimlResponse = generatePrimaryComplaintQuestion(supabaseUrl);
+        }
+        break;
 
-      if (aiDecision.needsMoreInfo) {
-        // AI needs more details - ask follow-up question
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="speech" timeout="8" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
-    <Say voice="alice">${escapeXml(aiDecision.followUpQuestion)}</Say>
-  </Gather>
-  <Say voice="alice">I didn't hear a response. Please leave a message after the beep with your name, phone number, and concern. If you feel this is an emergency, please hang up and call 911 or go to your nearest emergency room.</Say>
-  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
-</Response>`;
-        responseAction = 'follow_up';
-      } else if (aiDecision.isUrgent) {
-        // Urgent - connect to on-call provider immediately
-        console.log('Urgent case detected - transferring to:', oncallProviderPhone);
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Based on what you have described, I am connecting you to the on-call provider now. Please hold.</Say>
-  <Dial timeout="30" callerId="${to}">
-    <Number>${oncallProviderPhone}</Number>
-  </Dial>
-  <Say voice="alice">The on-call provider is currently unavailable. Please leave a detailed message after the beep with your name, phone number, and symptoms. They will call you back as soon as possible.</Say>
-  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
-</Response>`;
-        responseAction = 'urgent_transfer';
-      } else {
-        // Not urgent - take a message for next business day with safety override
-        console.log('Non-urgent assessment - taking message');
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Based on your description, this does not appear to require immediate attention from the on-call provider. Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day. However, if you feel this assessment is in error, please hang up and call 911 or seek immediate assistance at an emergency room.</Say>
-  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
-</Response>`;
-        responseAction = 'message_non_urgent';
-      }
-    } else {
-      // No speech - default to leave message with safety message
-      twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day. If you feel this is an emergency, please hang up and call 911 or go to your nearest emergency room.</Say>
-  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
-</Response>`;
-      responseAction = 'message_default';
+      case 'intake_questions':
+        if (speechResult) {
+          const qIndex = intakeData.intakeQuestionIndex;
+          intakeData.responses[`q${qIndex}`] = speechResult;
+          intakeData.symptoms.push(speechResult);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+
+          // Check for emergent symptoms immediately
+          if (detectEmergentSymptoms(speechResult, intakeData)) {
+            intakeData.triageLevel = 'emergent';
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent');
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+          } else if (qIndex < INTAKE_QUESTIONS.length - 1) {
+            // Continue with next question
+            intakeData.intakeQuestionIndex = qIndex + 1;
+            twimlResponse = generateIntakeQuestion(qIndex + 1, supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'intake_questions', intake_data: intakeData });
+          } else {
+            // All questions done - classify and route
+            intakeData.triageLevel = classifyTriage(intakeData);
+            if (intakeData.triageLevel === 'nonUrgent') {
+              twimlResponse = generateVoicemailPrompt(supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+            } else {
+              twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            }
+          }
+        } else {
+          twimlResponse = generateIntakeQuestion(intakeData.intakeQuestionIndex, supabaseUrl);
+        }
+        break;
+
+      case 'voicemail':
+        if (recordingUrl) {
+          transcript.push({ role: 'system', content: `Voicemail: ${recordingUrl}`, timestamp: new Date().toISOString() });
+          twimlResponse = generateVoicemailConfirmation();
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', recording_url: recordingUrl });
+          await logNotification(supabase, 'voicemail', callerPhone, { 
+            patientName: intakeData.patientName, 
+            recordingUrl, 
+            triageLevel: intakeData.triageLevel 
+          }, 'recorded');
+        } else {
+          twimlResponse = generateVoicemailPrompt(supabaseUrl);
+        }
+        break;
+
+      default:
+        twimlResponse = generateWelcomeResponse(onCallInfo.officeName, supabaseUrl);
+        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
     }
 
-    // Log the action
-    await supabase
-      .from('notification_logs')
-      .insert({
-        notification_type: 'voice_interaction',
-        recipient_phone: from,
-        content: { action: responseAction, digits, speechResult, oncall_phone: oncallProviderPhone },
-        status: 'completed',
-        metadata: { call_sid: callSid, office: officeName }
-      });
-
-    return new Response(twiml, {
+    return new Response(twimlResponse, {
       headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
     });
 
   } catch (error) {
     console.error('Error in twilio-voice-webhook:', error);
-    
-    const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">We're experiencing technical difficulties. Please try again later or call the main office number.</Say>
-</Response>`;
-
-    return new Response(errorTwiml, {
+  <Say voice="alice">We're experiencing technical difficulties. If this is an emergency, please hang up and dial 911.</Say>
+  <Hangup/>
+</Response>`, {
       headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
     });
   }
 });
 
-// AI function to analyze if caller's issue is an emergency requiring immediate callback
-async function analyzeUrgency(callerSpeech: string): Promise<boolean> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  
-  if (!LOVABLE_API_KEY) {
-    // If no AI available, be conservative and check for emergency keywords
-    const emergencyKeywords = [
-      'emergency', 'urgent', 'severe', 'sudden', 'loss of vision', 'blind',
-      'accident', 'injury', 'trauma', 'chemical', 'burn', 'bleeding',
-      'flash', 'floaters', 'curtain', 'veil', 'pain', 'red eye', 'swollen',
-      'hit', 'struck', 'foreign object', 'can\'t see', 'double vision'
-    ];
-    const lowerSpeech = callerSpeech.toLowerCase();
-    return emergencyKeywords.some(keyword => lowerSpeech.includes(keyword));
-  }
-
-  try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a medical triage AI for an ophthalmology (eye care) after-hours answering service.
-
-Your job is to determine if the caller's concern requires IMMEDIATE contact with the on-call eye doctor, or if it can wait until the next business day.
-
-URGENT/EMERGENCY (requires immediate callback):
-- Sudden vision loss or changes
-- Eye trauma, injury, or foreign objects
-- Chemical exposure to the eye
-- Severe eye pain
-- Flashes of light or sudden floaters
-- Curtain/veil over vision (possible retinal detachment)
-- Recent eye surgery complications
-- Eye infection with severe symptoms
-- Post-operative concerns within 1 week of surgery
-
-NON-URGENT (can wait for next business day callback):
-- Routine prescription refills
-- Scheduling questions
-- Minor irritation or dryness
-- Glasses or contact lens questions
-- Billing questions
-- General information requests
-- Mild redness without severe symptoms
-
-Respond with ONLY "URGENT" or "NOT_URGENT" based on the caller's description. When in doubt, err on the side of URGENT for patient safety.`
-          },
-          { role: 'user', content: callerSpeech }
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const aiResponse = data.choices?.[0]?.message?.content || '';
-    console.log('AI urgency response:', aiResponse);
-    
-    return aiResponse.toUpperCase().includes('URGENT') && !aiResponse.toUpperCase().includes('NOT_URGENT');
-  } catch (error) {
-    console.error('AI urgency analysis error:', error);
-    // On error, be conservative - if they mention anything eye-related and concerning, treat as urgent
-    const concerningKeywords = ['pain', 'vision', 'see', 'blind', 'emergency', 'urgent', 'severe'];
-    return concerningKeywords.some(keyword => callerSpeech.toLowerCase().includes(keyword));
-  }
+// Helper functions
+async function updateConversation(supabase: any, callSid: string, transcript: any[], metadata: any) {
+  await supabase
+    .from('twilio_conversations')
+    .update({ transcript, metadata, updated_at: new Date().toISOString() })
+    .eq('call_sid', callSid);
 }
 
-interface ConversationDecision {
-  needsMoreInfo: boolean;
-  isUrgent: boolean;
-  followUpQuestion: string;
-  nextStage: string;
+async function logNotification(supabase: any, type: string, phone: string, content: any, status: string) {
+  await supabase.from('notification_logs').insert({
+    notification_type: type,
+    recipient_phone: phone,
+    content,
+    status,
+    office_id: 'hill-country-eye'
+  });
 }
 
-// AI function to analyze full conversation and determine next step
-async function analyzeConversation(transcript: any[], metadata: any): Promise<ConversationDecision> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+function classifyAsAdministrative(text: string): boolean {
+  const lower = text.toLowerCase();
+  return TRIAGE_CRITERIA.administrative.some(k => lower.includes(k));
+}
+
+function detectEmergentSymptoms(text: string, intakeData: IntakeData): boolean {
+  const allText = [...intakeData.symptoms, text].join(' ').toLowerCase();
   
-  // Build conversation history
-  const conversationText = transcript
-    .map(t => `${t.role === 'caller' ? 'Patient' : 'System'}: ${t.content}`)
-    .join('\n');
+  // Check emergent keywords
+  if (TRIAGE_CRITERIA.emergent.some(k => allText.includes(k))) return true;
   
-  const interactionCount = transcript.filter(t => t.role === 'caller').length;
+  // Special combinations
+  const hasFlashCurtain = (allText.includes('flash') || allText.includes('floater')) && 
+                          (allText.includes('curtain') || allText.includes('shadow') || allText.includes('veil'));
+  const postOpSevere = intakeData.hasRecentSurgery === true && 
+                       (allText.includes('severe') || allText.includes('vision loss') || allText.includes('can\'t see'));
   
-  if (!LOVABLE_API_KEY) {
-    // Fallback without AI - check for emergency keywords
-    const lastMessage = transcript[transcript.length - 1]?.content || '';
-    const emergencyKeywords = ['emergency', 'urgent', 'severe', 'sudden', 'vision', 'blind', 'pain', 'injury', 'trauma'];
-    const isUrgent = emergencyKeywords.some(k => lastMessage.toLowerCase().includes(k));
-    
-    return {
-      needsMoreInfo: interactionCount < 2 && !isUrgent,
-      isUrgent,
-      followUpQuestion: "Can you tell me more about your symptoms? When did this start?",
-      nextStage: isUrgent ? 'urgent' : 'assessed'
-    };
+  return hasFlashCurtain || postOpSevere;
+}
+
+function classifyTriage(intakeData: IntakeData): 'emergent' | 'urgent' | 'nonUrgent' | 'administrative' {
+  const allText = intakeData.symptoms.join(' ').toLowerCase();
+  
+  if (TRIAGE_CRITERIA.emergent.some(k => allText.includes(k))) return 'emergent';
+  if (TRIAGE_CRITERIA.urgent.some(k => allText.includes(k))) return 'urgent';
+  if (TRIAGE_CRITERIA.nonUrgent.some(k => allText.includes(k))) return 'nonUrgent';
+  
+  // Default to urgent if unclear (safer)
+  return 'urgent';
+}
+
+async function handleEscalation(
+  supabase: any,
+  intakeData: IntakeData,
+  onCallInfo: any,
+  callerPhone: string,
+  calledPhone: string,
+  level: string
+): Promise<string> {
+  const providerPhone = onCallInfo.onCallProvider.phone;
+  
+  // Generate pre-call summary
+  const summary: PreCallSummary = {
+    patientName: intakeData.patientName || 'Unknown',
+    dateOfBirth: intakeData.dateOfBirth || 'Not provided',
+    callbackNumber: intakeData.callbackNumber || callerPhone,
+    isEstablishedPatient: intakeData.isEstablishedPatient || false,
+    hasRecentSurgery: intakeData.hasRecentSurgery || false,
+    primaryComplaint: intakeData.primaryComplaint || 'Not stated',
+    symptoms: intakeData.symptoms.slice(0, 5),
+    triageLevel: level,
+    officeName: onCallInfo.officeName,
+    serviceLine: onCallInfo.serviceLine
+  };
+
+  // CRITICAL: Send pre-call SMS BEFORE connecting the call
+  await sendPreCallSMS(supabase, providerPhone, summary);
+  
+  // Log escalation
+  await logNotification(supabase, `${level}_escalation`, providerPhone, {
+    summary,
+    providerNotified: onCallInfo.onCallProvider.name
+  }, 'escalating');
+
+  const urgencyMsg = level === 'emergent' 
+    ? "This is an urgent situation. I'm connecting you to the on-call physician immediately."
+    : "I'm connecting you to the on-call physician. Please hold.";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">${urgencyMsg} The doctor has been sent a summary of your symptoms.</Say>
+  <Dial callerId="${calledPhone}" timeout="30">
+    <Number>${providerPhone}</Number>
+  </Dial>
+  <Say voice="alice">We were unable to reach the on-call physician. ${SAFETY_NET_MESSAGE}</Say>
+  <Hangup/>
+</Response>`;
+}
+
+async function sendPreCallSMS(supabase: any, providerPhone: string, summary: PreCallSummary) {
+  const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
+  const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
+
+  if (!twilioSid || !twilioAuth || !twilioPhone) {
+    console.error('Twilio credentials missing for SMS');
+    return;
   }
 
+  const emoji = summary.triageLevel === 'emergent' ? '🔴' : '🟡';
+  const smsBody = `${emoji} ${summary.triageLevel.toUpperCase()} - ${summary.officeName}
+
+Patient: ${summary.patientName}
+DOB: ${summary.dateOfBirth}
+Callback: ${summary.callbackNumber}
+Established: ${summary.isEstablishedPatient ? 'Yes' : 'No'}
+Post-Op: ${summary.hasRecentSurgery ? 'Yes' : 'No'}
+
+Complaint: ${summary.primaryComplaint}
+
+Key Symptoms: ${summary.symptoms.slice(0, 3).join('; ') || 'See call'}
+
+Call incoming shortly.`.trim();
+
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a medical triage AI for Hill Country Eye Center's after-hours answering service.
-
-Your job is to:
-1. Gather relevant information about the caller's eye concern
-2. Determine if the situation is URGENT (requires immediate on-call provider contact) or NON-URGENT (can wait for next business day)
-
-URGENT CONDITIONS (forward to on-call immediately):
-- Sudden vision loss, blurred vision, or vision changes
-- Eye trauma, injury, hit to the eye, or foreign objects in the eye
-- Chemical splash or exposure to the eye
-- Severe eye pain (not mild discomfort)
-- New flashes of light or sudden increase in floaters
-- Curtain, shadow, or veil over vision (possible retinal detachment)
-- Post-operative complications within 2 weeks of eye surgery
-- Severe eye infection symptoms (significant swelling, discharge, light sensitivity with pain)
-
-NON-URGENT CONDITIONS (next business day callback):
-- Routine prescription refills
-- Appointment scheduling
-- Mild dryness or irritation
-- Contact lens or glasses questions
-- Billing or insurance questions
-- Minor redness without severe symptoms
-- General questions
-
-DECISION TREE:
-- If you don't have enough information, ask ONE brief follow-up question
-- Maximum 2 follow-up questions before making a determination
-- When in doubt about urgency, err on the side of URGENT for patient safety
-- Keep questions brief (will be spoken aloud)
-
-Respond in JSON format:
-{
-  "needsMoreInfo": true/false,
-  "isUrgent": true/false,
-  "followUpQuestion": "Brief question if more info needed",
-  "reasoning": "Brief explanation",
-  "nextStage": "gathering/assessed/urgent"
-}`
-          },
-          {
-            role: 'user',
-            content: `Conversation so far:\n${conversationText}\n\nNumber of patient responses: ${interactionCount}\n\nAnalyze and determine next step.`
-          }
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const aiContent = data.choices?.[0]?.message?.content || '';
-    console.log('AI conversation analysis:', aiContent);
-    
-    // Parse JSON response
-    try {
-      // Extract JSON from response (handle markdown code blocks)
-      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          needsMoreInfo: parsed.needsMoreInfo === true && interactionCount < 3,
-          isUrgent: parsed.isUrgent === true,
-          followUpQuestion: parsed.followUpQuestion || "Can you describe your symptoms in more detail?",
-          nextStage: parsed.nextStage || 'assessed'
-        };
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${twilioSid}:${twilioAuth}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          To: providerPhone,
+          From: twilioPhone,
+          Body: smsBody,
+        }),
       }
-    } catch (parseError) {
-      console.error('Error parsing AI response:', parseError);
-    }
+    );
+
+    const result = await response.json();
+    console.log('Pre-call SMS sent:', result.sid);
     
-    // Fallback if parsing fails - check for urgency keywords in AI response
-    const isUrgent = aiContent.toLowerCase().includes('"isurgent": true') || 
-                     aiContent.toLowerCase().includes('"isurgent":true');
-    return {
-      needsMoreInfo: false,
-      isUrgent,
-      followUpQuestion: "",
-      nextStage: 'assessed'
-    };
-    
+    await supabase.from('notification_logs').insert({
+      notification_type: 'pre_call_summary',
+      recipient_phone: providerPhone,
+      content: { summary, message: smsBody },
+      status: response.ok ? 'sent' : 'failed',
+      twilio_sid: result.sid
+    });
   } catch (error) {
-    console.error('AI conversation analysis error:', error);
-    // On error, be conservative
-    const lastMessage = transcript[transcript.length - 1]?.content || '';
-    const concerningKeywords = ['pain', 'vision', 'see', 'blind', 'emergency', 'urgent', 'severe', 'sudden'];
-    const isUrgent = concerningKeywords.some(k => lastMessage.toLowerCase().includes(k));
-    
-    return {
-      needsMoreInfo: false,
-      isUrgent,
-      followUpQuestion: "",
-      nextStage: isUrgent ? 'urgent' : 'assessed'
-    };
+    console.error('Error sending pre-call SMS:', error);
   }
 }
 
-async function generateAIResponse(userMessage: string, conversation: any): Promise<string> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  
-  if (!LOVABLE_API_KEY) {
-    return "I've noted your message and will have the on-call provider contact you shortly.";
-  }
+// TwiML Generators
+function generateWelcomeResponse(officeName: string, baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thank you for calling the ${escapeXml(officeName)} after hours answering service. If this is a life-threatening emergency, please hang up and dial 911.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">I'm an automated assistant and I'll gather some information to help you. First, may I have your full name please?</Say>
+  <Gather input="speech" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Please say your full name.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
 
-  try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional medical answering service AI for ${conversation.metadata?.office_name || 'a medical office'}. You help callers by:
-1. Gathering basic information about their medical concern
-2. Assessing urgency (but always recommend 911 for true emergencies)
-3. Taking messages for the on-call provider
-4. Providing general guidance while being clear you're not providing medical advice
+function generateCollectNameResponse(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Please say your full name.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
 
-Keep responses brief and clear (under 50 words) as they will be spoken via phone.
-Never provide specific medical diagnoses or treatment recommendations.
-Always encourage callers to seek emergency care if symptoms sound serious.`
-          },
-          ...(conversation.transcript || []).map((t: any) => ({
-            role: t.role === 'caller' ? 'user' : 'assistant',
-            content: t.content
-          })),
-          { role: 'user', content: userMessage }
-        ],
-      }),
-    });
+function generateCollectDOBResponse(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Thank you. What is your date of birth?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "I've noted your message. A provider will contact you soon.";
-  } catch (error) {
-    console.error('AI response error:', error);
-    return "I've recorded your message. The on-call provider will be notified.";
-  }
+function generateCollectCallbackResponse(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">What is the best phone number to reach you?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateEstablishedPatientQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Are you an established patient of our practice? Please say yes or no.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateSurgeryQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="5" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Have you had eye surgery recently or do you have upcoming eye surgery?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generatePrimaryComplaintQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="10" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Please briefly describe the reason for your call. What symptoms are you experiencing?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateIntakeQuestion(index: number, baseUrl: string): string {
+  const question = INTAKE_QUESTIONS[index];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="8" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">${escapeXml(question)}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateAdministrativeDeflection(officeName: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Your request appears to be administrative, such as scheduling, billing, or prescription refills. Our staff will be happy to assist during regular business hours, Monday through Friday, 8 AM to 5 PM.</Say>
+  <Say voice="alice">If you have a medical concern that feels urgent, please call back and describe your symptoms.</Say>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Say voice="alice">Thank you for calling ${escapeXml(officeName)}. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+}
+
+function generateVoicemailPrompt(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Based on your symptoms, this does not appear to require immediate attention from the on-call provider. I'll take a message for the office to return your call during business hours.</Say>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Say voice="alice">Please leave your message after the tone.</Say>
+  <Record maxLength="120" action="${baseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
+</Response>`;
+}
+
+function generateVoicemailConfirmation(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thank you. Your message has been recorded and will be reviewed the next business day.</Say>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Say voice="alice">Goodbye.</Say>
+  <Hangup/>
+</Response>`;
 }
 
 function escapeXml(text: string): string {
