@@ -18,6 +18,13 @@ import {
   LogOut,
   Menu,
   X,
+  CalendarDays,
+  ArrowRightLeft,
+  Umbrella,
+  Zap,
+  ShieldCheck,
+  CreditCard,
+  Shield,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -54,16 +61,26 @@ export function MainLayout({ children }: { children: ReactNode }) {
     { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
     { to: '/offices', icon: <Building2 className="h-4 w-4" />, label: 'Offices' },
     { to: '/users', icon: <Users className="h-4 w-4" />, label: 'Users' },
+    { to: '/cross-coverage', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Cross-Coverage' },
+    { to: '/billing', icon: <CreditCard className="h-4 w-4" />, label: 'Billing & Usage' },
+    { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance' },
     { to: '/audit', icon: <FileText className="h-4 w-4" />, label: 'Audit Log' },
   ];
 
   const officeNavItems = [
     { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
     { to: '/calendar', icon: <Calendar className="h-4 w-4" />, label: 'On-Call Calendar' },
+    { to: '/my-shifts', icon: <CalendarDays className="h-4 w-4" />, label: 'My Shifts' },
+    { to: '/swap-requests', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Swap Requests' },
+    { to: '/availability', icon: <Umbrella className="h-4 w-4" />, label: 'Availability (PTO)' },
     { to: '/publish', icon: <Activity className="h-4 w-4" />, label: 'Publish Schedule' },
     { to: '/service-lines', icon: <AlertTriangle className="h-4 w-4" />, label: 'Service Lines' },
-    { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation' },
+    { to: '/holidays', icon: <Calendar className="h-4 w-4" />, label: 'Holidays' },
+    { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation Paths' },
+    { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Escalation Mgmt' },
+    { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
     { to: '/operator', icon: <Phone className="h-4 w-4" />, label: 'Operator View' },
+    { to: '/settings', icon: <Settings className="h-4 w-4" />, label: 'Settings' },
   ];
 
   const navItems = isCompanyLevel ? companyNavItems : officeNavItems;

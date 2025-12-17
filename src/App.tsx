@@ -13,6 +13,16 @@ import ServiceLinesPage from "./pages/ServiceLinesPage";
 import EscalationPage from "./pages/EscalationPage";
 import PublishPage from "./pages/PublishPage";
 import AuditPage from "./pages/AuditPage";
+import AvailabilityPage from "./pages/AvailabilityPage";
+import MyShiftsPage from "./pages/MyShiftsPage";
+import SwapRequestsPage from "./pages/SwapRequestsPage";
+import HolidaysPage from "./pages/HolidaysPage";
+import EscalationManagementPage from "./pages/EscalationManagementPage";
+import SettingsPage from "./pages/SettingsPage";
+import CredentialingPage from "./pages/CredentialingPage";
+import CrossCoveragePage from "./pages/CrossCoveragePage";
+import BillingPage from "./pages/BillingPage";
+import CompliancePage from "./pages/CompliancePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +44,16 @@ const App = () => (
             <Route path="/escalation" element={<EscalationPage />} />
             <Route path="/publish" element={<PublishPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/availability" element={<AvailabilityPage />} />
+            <Route path="/my-shifts" element={<MyShiftsPage />} />
+            <Route path="/swap-requests" element={<SwapRequestsPage />} />
+            <Route path="/holidays" element={<HolidaysPage />} />
+            <Route path="/escalation-management" element={<EscalationManagementPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/credentialing" element={<CredentialingPage />} />
+            <Route path="/cross-coverage" element={<CrossCoveragePage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/compliance" element={<CompliancePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
