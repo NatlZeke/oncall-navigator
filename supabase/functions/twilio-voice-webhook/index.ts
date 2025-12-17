@@ -211,49 +211,17 @@ serve(async (req) => {
             twimlResponse = generateAdministrativeDeflection(onCallInfo.officeName);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
             await logNotification(supabase, 'administrative_deflection', callerPhone, { complaint: speechResult }, 'deflected');
-          } else if (detectEmergentSymptoms(speechResult, intakeData)) {
-            // Emergent - escalate immediately
-            intakeData.triageLevel = 'emergent';
-            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent');
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
           } else {
-            // Ask one follow-up for clarity
-            twimlResponse = generateFollowUpQuestion(supabaseUrl);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'follow_up', intake_data: intakeData });
+            // Any medical complaint - connect to doctor immediately
+            intakeData.triageLevel = detectEmergentSymptoms(speechResult, intakeData) ? 'emergent' : 'urgent';
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
           }
         } else {
           twimlResponse = generateComplaintQuestion(supabaseUrl);
         }
         break;
 
-      case 'follow_up':
-        if (speechResult) {
-          intakeData.symptoms.push(speechResult);
-          intakeData.followUpAsked = true;
-          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
-          
-          // Final classification
-          intakeData.triageLevel = classifyTriage(intakeData);
-          
-          if (intakeData.triageLevel === 'nonUrgent') {
-            twimlResponse = generateVoicemailPrompt(supabaseUrl);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
-          } else {
-            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
-          }
-        } else {
-          // No response - classify with what we have
-          intakeData.triageLevel = classifyTriage(intakeData);
-          if (intakeData.triageLevel === 'nonUrgent') {
-            twimlResponse = generateVoicemailPrompt(supabaseUrl);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
-          } else {
-            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
-          }
-        }
-        break;
 
       case 'voicemail':
         if (recordingUrl) {
@@ -470,15 +438,6 @@ function generateComplaintQuestion(baseUrl: string): string {
 </Response>`;
 }
 
-function generateFollowUpQuestion(baseUrl: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="speech" timeout="4" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="alice">Any vision loss, severe pain, or flashes and floaters?</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-}
 
 function generateAdministrativeDeflection(officeName: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
