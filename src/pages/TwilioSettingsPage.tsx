@@ -1,12 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Phone, MessageSquare, Webhook, Copy, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Phone, MessageSquare, Webhook, Copy, CheckCircle2, AlertCircle, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
+
+interface NotificationLog {
+  id: string;
+  notification_type: string;
+  recipient_phone: string | null;
+  status: string;
+  twilio_sid: string | null;
+  created_at: string;
+  content: { message?: string } | null;
+  metadata: { delivery_status?: string; error_message?: string } | null;
+}
 
 const TwilioSettingsPage = () => {
   const { toast } = useToast();
@@ -14,10 +27,70 @@ const TwilioSettingsPage = () => {
   const [testMessage, setTestMessage] = useState('This is a test message from OnCallOps.');
   const [isSending, setIsSending] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState<string | null>(null);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const voiceWebhookUrl = `${supabaseUrl}/functions/v1/twilio-voice-webhook`;
   const smsWebhookUrl = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
+  const statusWebhookUrl = `${supabaseUrl}/functions/v1/twilio-status-webhook`;
+
+  const fetchNotificationLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const { data, error } = await supabase
+        .from('notification_logs')
+        .select('*')
+        .in('notification_type', ['sms', 'call'])
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setNotificationLogs((data as NotificationLog[]) || []);
+    } catch (error) {
+      console.error('Error fetching notification logs:', error);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotificationLogs();
+    
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('notification_logs_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notification_logs' },
+        () => fetchNotificationLogs()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const getStatusBadge = (status: string, metadata: NotificationLog['metadata']) => {
+    const deliveryStatus = metadata?.delivery_status || status;
+    
+    switch (deliveryStatus) {
+      case 'delivered':
+        return <Badge className="bg-green-500"><CheckCircle2 className="h-3 w-3 mr-1" />Delivered</Badge>;
+      case 'sent':
+        return <Badge className="bg-blue-500"><Clock className="h-3 w-3 mr-1" />Sent</Badge>;
+      case 'pending':
+      case 'queued':
+      case 'sending':
+        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+      case 'failed':
+      case 'undelivered':
+        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   const copyToClipboard = async (text: string, type: string) => {
     await navigator.clipboard.writeText(text);
@@ -174,6 +247,36 @@ const TwilioSettingsPage = () => {
                 Set this as the webhook URL for incoming SMS messages in Twilio.
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label>Status Callback URL (Auto-configured)</Label>
+              <div className="flex gap-2">
+                <Input value={statusWebhookUrl} readOnly className="font-mono text-sm bg-muted" />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(statusWebhookUrl, 'Status')}
+                >
+                  {copiedWebhook === 'Status' ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This is automatically included when sending SMS. It tracks delivery status (delivered, failed, etc.).
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                <strong>Trial Account Note:</strong> Twilio trial accounts can only send SMS to verified phone numbers. 
+                <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/verified" target="_blank" rel="noopener noreferrer" className="underline ml-1">
+                  Verify your number here
+                </a>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -250,6 +353,58 @@ const TwilioSettingsPage = () => {
                 Make Test Call
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Notifications with Delivery Status */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Recent Notifications</CardTitle>
+                <CardDescription>
+                  Track delivery status of SMS and calls sent from the system.
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchNotificationLogs} disabled={isLoadingLogs}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {notificationLogs.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">
+                No notifications sent yet. Send a test message above to see delivery tracking.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {notificationLogs.map((log) => (
+                  <div key={log.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                    <div className="flex items-center gap-3">
+                      {log.notification_type === 'sms' ? (
+                        <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                      ) : (
+                        <Phone className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      <div>
+                        <p className="font-medium text-sm">{log.recipient_phone || 'Unknown'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(log.created_at), 'MMM d, h:mm a')}
+                          {log.twilio_sid && (
+                            <span className="ml-2 font-mono">{log.twilio_sid.substring(0, 12)}...</span>
+                          )}
+                        </p>
+                        {log.metadata?.error_message && (
+                          <p className="text-xs text-destructive mt-1">{log.metadata.error_message}</p>
+                        )}
+                      </div>
+                    </div>
+                    {getStatusBadge(log.status, log.metadata)}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

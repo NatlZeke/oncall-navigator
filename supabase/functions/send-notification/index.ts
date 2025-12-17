@@ -37,11 +37,15 @@ serve(async (req) => {
     if (type === 'sms') {
       // Send SMS via Twilio
       const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+      const statusCallbackUrl = `${supabaseUrl}/functions/v1/twilio-status-webhook`;
       
       const formData = new URLSearchParams();
       formData.append('To', to);
       formData.append('From', twilioPhoneNumber);
       formData.append('Body', message);
+      formData.append('StatusCallback', statusCallbackUrl);
+
+      console.log('Sending SMS with status callback:', statusCallbackUrl);
 
       const twilioResponse = await fetch(twilioUrl, {
         method: 'POST',
