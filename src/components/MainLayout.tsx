@@ -26,6 +26,7 @@ import {
   CreditCard,
   Shield,
   MessageSquare,
+  Moon,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -70,6 +71,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
 
   const officeNavItems = [
     { to: '/', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard' },
+    { to: '/after-hours', icon: <Moon className="h-4 w-4" />, label: 'After-Hours Schedule' },
     { to: '/calendar', icon: <Calendar className="h-4 w-4" />, label: 'On-Call Calendar' },
     { to: '/my-shifts', icon: <CalendarDays className="h-4 w-4" />, label: 'My Shifts' },
     { to: '/swap-requests', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Swap Requests' },
