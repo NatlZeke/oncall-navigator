@@ -98,6 +98,7 @@ const SAFETY_NET_MESSAGE = "If symptoms worsen or you have sudden vision loss, s
 // Intake data structure
 interface IntakeData {
   patientName?: string;
+  dateOfBirth?: string;
   callbackNumber?: string;
   isEstablishedPatient?: boolean;
   hasRecentSurgery?: boolean;
@@ -108,7 +109,10 @@ interface IntakeData {
   hasTraumaChemical?: boolean;
   primaryComplaint?: string;
   symptoms: string[];
-  triageLevel?: 'emergent' | 'urgent' | 'nonUrgent' | 'administrative';
+  triageLevel?: 'emergent' | 'urgent' | 'nonUrgent' | 'administrative' | 'prescription';
+  // Prescription-specific fields
+  isPrescriptionRequest?: boolean;
+  medicationRequested?: string;
 }
 
 // Pre-call summary structure
@@ -124,12 +128,18 @@ interface PreCallSummary {
   serviceLine: string;
 }
 
-// Check for administrative keywords
+// Check for administrative keywords (excluding prescription - handled separately)
 const ADMINISTRATIVE_KEYWORDS = [
   'billing', 'bill', 'payment', 'insurance', 'cost', 'price',
   'schedule', 'appointment', 'reschedule', 'cancel',
-  'refill', 'prescription', 'medication', 'drops',
   'glasses', 'contacts', 'contact lenses', 'frames'
+];
+
+// PRESCRIPTION REQUEST DETECTION - Strict rule: never wake on-call for refills
+const PRESCRIPTION_KEYWORDS = [
+  'refill', 'prescription', 'medication', 'drops', 'eye drops',
+  'medicine', 'rx', 'renew', 'renewal', 'out of', 'ran out',
+  'need more', 'running low'
 ];
 
 serve(async (req) => {
@@ -369,8 +379,26 @@ serve(async (req) => {
           intakeData.symptoms.push(speechResult);
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
-          // Check if administrative
-          if (isAdministrative(speechResult)) {
+          // PRIORITY 1: Check for prescription requests FIRST (separate handling)
+          if (isPrescriptionRequest(speechResult)) {
+            intakeData.isPrescriptionRequest = true;
+            intakeData.triageLevel = 'prescription';
+            // BUT check if they also have emergent symptoms - symptoms override prescription routing
+            const hasEmergentSymptom = intakeData.hasVisionLoss || intakeData.hasEyePain || 
+                                       intakeData.hasFlashesFloaters || intakeData.hasTraumaChemical;
+            if (hasEmergentSymptom) {
+              // Symptoms override - continue with urgent/emergent escalation
+              intakeData.triageLevel = 'urgent';
+              twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'urgent', callSid);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            } else {
+              // Pure prescription request - route to next-business-day workflow
+              twimlResponse = generatePrescriptionIntro(supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_prescription_dob', intake_data: intakeData });
+            }
+          }
+          // PRIORITY 2: Check if administrative (billing, scheduling, etc)
+          else if (isAdministrative(speechResult)) {
             intakeData.triageLevel = 'administrative';
             twimlResponse = generateAdministrativeDeflection(onCallInfo.officeName);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
@@ -412,6 +440,66 @@ serve(async (req) => {
         }
         break;
 
+      // PRESCRIPTION REQUEST WORKFLOW - Never escalate to on-call
+      case 'ask_prescription_dob':
+        if (speechResult) {
+          intakeData.dateOfBirth = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generatePrescriptionCallbackQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_prescription_callback', intake_data: intakeData });
+        } else {
+          twimlResponse = generatePrescriptionDOBQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_prescription_callback':
+        if (speechResult) {
+          intakeData.callbackNumber = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_prescription_medication', intake_data: intakeData });
+        } else {
+          twimlResponse = generatePrescriptionCallbackQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_prescription_medication':
+        if (speechResult) {
+          intakeData.medicationRequested = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Log prescription request summary (NOT sent to on-call)
+          const prescriptionSummary = {
+            officeId: 'hill-country-eye',
+            officeName: onCallInfo.officeName,
+            requestType: 'PRESCRIPTION_REQUEST',
+            callerName: intakeData.patientName || 'Unknown',
+            dob: intakeData.dateOfBirth || 'Not provided',
+            callbackNumber: intakeData.callbackNumber || callerPhone,
+            medicationRequested: intakeData.medicationRequested,
+            notes: 'Prescription request after hours. No emergent ophthalmic symptoms reported.',
+            triageLevel: 'ADMINISTRATIVE',
+            followUp: 'Next business day'
+          };
+          
+          await logNotification(supabase, 'prescription_request', callerPhone, prescriptionSummary, 'recorded', {
+            workflow: 'prescription_next_business_day',
+            escalated: false
+          });
+          await logSafetyMessageDelivered(supabase, callSid, callerPhone);
+          
+          twimlResponse = generatePrescriptionConfirmation();
+          await updateConversation(supabase, callSid, transcript, { 
+            ...metadata, 
+            stage: 'complete', 
+            intake_data: intakeData,
+            prescription_summary: prescriptionSummary
+          });
+        } else {
+          twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+        }
+        break;
+
       default:
         twimlResponse = generateWelcomeResponse(onCallInfo.officeName, supabaseUrl);
         await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
@@ -440,7 +528,15 @@ function isAffirmative(text: string): boolean {
 
 function isAdministrative(text: string): boolean {
   const lower = text.toLowerCase();
+  // Exclude prescription keywords - they have dedicated handling
+  if (isPrescriptionRequest(lower)) return false;
   return ADMINISTRATIVE_KEYWORDS.some(k => lower.includes(k));
+}
+
+// PRESCRIPTION DETECTION - Separate from administrative
+function isPrescriptionRequest(text: string): boolean {
+  const lower = text.toLowerCase();
+  return PRESCRIPTION_KEYWORDS.some(k => lower.includes(k));
 }
 
 async function updateConversation(supabase: any, callSid: string, transcript: any[], metadata: any) {
@@ -731,6 +827,66 @@ function generateVoicemailConfirmation(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Your message has been recorded.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Pause length="1"/>
+  <Say voice="alice">Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+}
+
+// PRESCRIPTION REQUEST TwiML GENERATORS
+
+function generatePrescriptionIntro(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thanks for letting me know. Prescription refills and prescription requests are handled during normal business hours.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">I'll take a message and make sure it's reviewed by the office on the next business day.</Say>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">What is your date of birth?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generatePrescriptionDOBQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">I didn't catch that. What is your date of birth?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generatePrescriptionCallbackQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">What is the best callback number?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generatePrescriptionMedicationQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">What medication are you requesting, if you know the name?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generatePrescriptionConfirmation(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thanks. I've recorded your prescription request, and the office will respond on the next business day.</Say>
   <Pause length="1"/>
   <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
   <Pause length="1"/>
