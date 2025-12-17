@@ -187,11 +187,17 @@ const TwilioSettingsPage = () => {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Twilio Integration</h1>
-          <p className="text-muted-foreground mt-1">
-            Configure voice and SMS notifications for your on-call system.
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Twilio Integration</h1>
+            <p className="text-muted-foreground mt-1">
+              Configure voice and SMS notifications for your on-call system.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">After Hours Number</p>
+            <p className="text-2xl font-bold text-primary">(737) 252-1937</p>
+          </div>
         </div>
 
         {/* Webhook URLs */}
