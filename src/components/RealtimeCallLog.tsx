@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Phone, Voicemail, UserCheck, Clock, RefreshCw } from 'lucide-react';
-import { format } from 'date-fns';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Phone, Voicemail, UserCheck, Clock, RefreshCw, Filter, Calendar } from 'lucide-react';
+import { format, subDays, subHours, isAfter } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 interface CallLog {
@@ -21,9 +22,14 @@ interface CallLog {
   } | null;
 }
 
+type OutcomeFilter = 'all' | 'escalated' | 'voicemail';
+type DateFilter = '1h' | '24h' | '7d' | '30d' | 'all';
+
 export function RealtimeCallLog() {
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('24h');
 
   // Fetch initial calls
   useEffect(() => {
@@ -32,7 +38,7 @@ export function RealtimeCallLog() {
         .from('twilio_conversations')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(100);
 
       if (!error && data) {
         setCalls(data as CallLog[]);
@@ -56,7 +62,7 @@ export function RealtimeCallLog() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setCalls(prev => [payload.new as CallLog, ...prev].slice(0, 20));
+            setCalls(prev => [payload.new as CallLog, ...prev].slice(0, 100));
           } else if (payload.eventType === 'UPDATE') {
             setCalls(prev => prev.map(call => 
               call.id === (payload.new as CallLog).id ? payload.new as CallLog : call
@@ -92,6 +98,53 @@ export function RealtimeCallLog() {
     return phone;
   };
 
+  // Filter calls based on selected filters
+  const filteredCalls = useMemo(() => {
+    const now = new Date();
+    let dateThreshold: Date | null = null;
+
+    switch (dateFilter) {
+      case '1h':
+        dateThreshold = subHours(now, 1);
+        break;
+      case '24h':
+        dateThreshold = subDays(now, 1);
+        break;
+      case '7d':
+        dateThreshold = subDays(now, 7);
+        break;
+      case '30d':
+        dateThreshold = subDays(now, 30);
+        break;
+      default:
+        dateThreshold = null;
+    }
+
+    return calls.filter(call => {
+      // Date filter
+      if (dateThreshold && !isAfter(new Date(call.created_at), dateThreshold)) {
+        return false;
+      }
+
+      // Outcome filter
+      if (outcomeFilter !== 'all') {
+        const outcome = getTriageOutcome(call);
+        if (outcomeFilter === 'escalated' && outcome.type !== 'escalated') {
+          return false;
+        }
+        if (outcomeFilter === 'voicemail' && outcome.type !== 'voicemail') {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [calls, dateFilter, outcomeFilter]);
+
+  // Count for badges
+  const escalatedCount = calls.filter(c => getTriageOutcome(c).type === 'escalated').length;
+  const voicemailCount = calls.filter(c => getTriageOutcome(c).type === 'voicemail').length;
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -105,6 +158,49 @@ export function RealtimeCallLog() {
             <span>Live</span>
           </div>
         </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+            <SelectTrigger className="w-[120px] h-8 text-xs">
+              <Calendar className="h-3 w-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1h">Last hour</SelectItem>
+              <SelectItem value="24h">Last 24h</SelectItem>
+              <SelectItem value="7d">Last 7 days</SelectItem>
+              <SelectItem value="30d">Last 30 days</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={outcomeFilter} onValueChange={(v) => setOutcomeFilter(v as OutcomeFilter)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <Filter className="h-3 w-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All outcomes</SelectItem>
+              <SelectItem value="escalated">
+                <span className="flex items-center gap-1">
+                  <UserCheck className="h-3 w-3 text-destructive" />
+                  Escalated ({escalatedCount})
+                </span>
+              </SelectItem>
+              <SelectItem value="voicemail">
+                <span className="flex items-center gap-1">
+                  <Voicemail className="h-3 w-3" />
+                  Voicemail ({voicemailCount})
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Badge variant="outline" className="h-8 px-2 text-xs">
+            {filteredCalls.length} call{filteredCalls.length !== 1 ? 's' : ''}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -112,16 +208,16 @@ export function RealtimeCallLog() {
             <RefreshCw className="h-5 w-5 animate-spin mr-2" />
             Loading calls...
           </div>
-        ) : calls.length === 0 ? (
+        ) : filteredCalls.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No recent calls</p>
-            <p className="text-xs">Calls will appear here in real-time</p>
+            <p className="text-sm">No calls match filters</p>
+            <p className="text-xs">Try adjusting your date range or outcome filter</p>
           </div>
         ) : (
           <ScrollArea className="h-[300px]">
             <div className="space-y-2">
-              {calls.map((call) => {
+              {filteredCalls.map((call) => {
                 const outcome = getTriageOutcome(call);
                 const isEscalated = outcome.type === 'escalated';
                 
