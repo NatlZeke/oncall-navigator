@@ -103,6 +103,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
     {
       title: 'Compliance',
       items: [
+        { to: '/call-analytics', icon: <Activity className="h-4 w-4" />, label: 'Call Analytics' },
         { to: '/compliance-center', icon: <ShieldAlert className="h-4 w-4" />, label: 'Compliance Center' },
         { to: '/compliance', icon: <Shield className="h-4 w-4" />, label: 'Compliance Settings' },
         { to: '/audit', icon: <FileText className="h-4 w-4" />, label: 'Audit Log' },
@@ -130,6 +131,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
       items: [
         { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Active Escalations' },
         { to: '/call-logs', icon: <ClipboardList className="h-4 w-4" />, label: 'Call Logs' },
+        { to: '/call-analytics', icon: <Activity className="h-4 w-4" />, label: 'Call Analytics' },
         { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Reports' },
       ],
     },
