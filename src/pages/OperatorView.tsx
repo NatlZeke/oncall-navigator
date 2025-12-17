@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OphthalmologyTriageInfo } from '@/components/OphthalmologyTriageInfo';
 import { CallFlowVisualization, EscalationStatusIndicators } from '@/components/CallFlowVisualization';
 import { DemoMode } from '@/components/DemoMode';
+import { TriageFlowChart } from '@/components/TriageFlowChart';
 
 // Mock single on-call per office (matching webhook data)
 const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: string; afterHoursEnd: string }> = {
@@ -280,6 +281,7 @@ const OperatorView = () => {
 
           {/* Protocol Tab */}
           <TabsContent value="protocol" className="space-y-4">
+            <TriageFlowChart />
             <OphthalmologyTriageInfo />
             <CallFlowVisualization />
             
