@@ -1,13 +1,15 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useApp } from '@/contexts/AppContext';
+import { CompanyDashboard } from '@/components/dashboards/CompanyDashboard';
+import { OfficeDashboard } from '@/components/dashboards/OfficeDashboard';
+import { MainLayout } from '@/components/MainLayout';
 
 const Index = () => {
+  const { isCompanyLevel } = useApp();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
+    <MainLayout>
+      {isCompanyLevel ? <CompanyDashboard /> : <OfficeDashboard />}
+    </MainLayout>
   );
 };
 
