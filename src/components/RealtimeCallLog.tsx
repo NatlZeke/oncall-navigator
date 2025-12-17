@@ -1,13 +1,15 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Phone, Voicemail, UserCheck, Clock, RefreshCw, Filter, Calendar, ChevronDown, MessageSquare, Bot, User } from 'lucide-react';
+import { Phone, Voicemail, UserCheck, Clock, RefreshCw, Filter, Calendar, ChevronDown, MessageSquare, Bot, User, Download } from 'lucide-react';
 import { format, subDays, subHours, isAfter } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface TranscriptEntry {
   role: 'assistant' | 'user' | 'system';
@@ -154,6 +156,70 @@ export function RealtimeCallLog() {
   const escalatedCount = calls.filter(c => getTriageOutcome(c).type === 'escalated').length;
   const voicemailCount = calls.filter(c => getTriageOutcome(c).type === 'voicemail').length;
 
+  // Export to CSV
+  const exportToCSV = useCallback(() => {
+    if (filteredCalls.length === 0) {
+      toast.error('No calls to export');
+      return;
+    }
+
+    const escapeCSV = (str: string) => {
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = [
+      'Call ID',
+      'Caller Phone',
+      'Date/Time',
+      'Status',
+      'Triage Outcome',
+      'Triage Level',
+      'Red Flags',
+      'Safety Message Delivered',
+      'Transcript'
+    ];
+
+    const rows = filteredCalls.map(call => {
+      const outcome = getTriageOutcome(call);
+      const transcript = call.transcript && Array.isArray(call.transcript) 
+        ? call.transcript.map(t => `[${t.role}]: ${t.content}`).join(' | ')
+        : '';
+      const redFlags = call.metadata?.red_flags?.join('; ') || '';
+      
+      return [
+        call.call_sid,
+        formatPhone(call.caller_phone),
+        format(new Date(call.created_at), 'yyyy-MM-dd HH:mm:ss'),
+        call.status,
+        outcome.type,
+        outcome.label,
+        redFlags,
+        call.metadata?.safety_message_delivered ? 'Yes' : 'No',
+        transcript
+      ].map(val => escapeCSV(String(val)));
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `call-logs-${format(new Date(), 'yyyy-MM-dd-HHmm')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success(`Exported ${filteredCalls.length} call${filteredCalls.length !== 1 ? 's' : ''} to CSV`);
+  }, [filteredCalls]);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -209,6 +275,17 @@ export function RealtimeCallLog() {
           <Badge variant="outline" className="h-8 px-2 text-xs">
             {filteredCalls.length} call{filteredCalls.length !== 1 ? 's' : ''}
           </Badge>
+
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8 text-xs gap-1"
+            onClick={exportToCSV}
+            disabled={filteredCalls.length === 0}
+          >
+            <Download className="h-3 w-3" />
+            Export CSV
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
