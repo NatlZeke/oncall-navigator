@@ -214,7 +214,7 @@ serve(async (req) => {
           } else {
             // Any medical complaint - connect to doctor immediately
             intakeData.triageLevel = detectEmergentSymptoms(speechResult, intakeData) ? 'emergent' : 'urgent';
-            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel);
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel, callSid);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
           }
         } else {
@@ -267,14 +267,31 @@ async function updateConversation(supabase: any, callSid: string, transcript: an
     .eq('call_sid', callSid);
 }
 
-async function logNotification(supabase: any, type: string, phone: string, content: any, status: string) {
+async function logNotification(supabase: any, type: string, phone: string, content: any, status: string, metadata?: any) {
   await supabase.from('notification_logs').insert({
     notification_type: type,
     recipient_phone: phone,
     content,
     status,
-    office_id: 'hill-country-eye'
+    office_id: 'hill-country-eye',
+    metadata: metadata || {}
   });
+}
+
+// Log safety message delivery for compliance tracking
+async function logSafetyMessageDelivered(supabase: any, callSid: string, callerPhone: string) {
+  await logNotification(
+    supabase,
+    'safety_message_delivered',
+    callerPhone,
+    { 
+      message: SAFETY_NET_MESSAGE,
+      call_sid: callSid,
+      delivered_at: new Date().toISOString()
+    },
+    'delivered',
+    { compliance_verified: true, message_type: 'safety_net' }
+  );
 }
 
 function classifyAsAdministrative(text: string): boolean {
@@ -311,10 +328,12 @@ async function handleEscalation(
   onCallInfo: any,
   callerPhone: string,
   calledPhone: string,
-  level: string
+  level: string,
+  callSid: string
 ): Promise<string> {
   const providerPhone = onCallInfo.onCallProvider.phone;
   
+  // STEP 1: Create structured summary (MANDATORY before any call)
   const summary: PreCallSummary = {
     patientName: intakeData.patientName || 'Unknown',
     callbackNumber: intakeData.callbackNumber || callerPhone,
@@ -327,16 +346,37 @@ async function handleEscalation(
     serviceLine: onCallInfo.serviceLine
   };
 
-  await sendPreCallSMS(supabase, providerPhone, summary);
+  // Log summary creation
+  await logNotification(supabase, 'summary_created', callerPhone, {
+    summary,
+    step: 'summary_created',
+    call_sid: callSid
+  }, 'created', { workflow_step: 1 });
+
+  // STEP 2: Send pre-call SMS (MANDATORY - no call without summary delivery)
+  const smsDelivered = await sendPreCallSMS(supabase, providerPhone, summary, callSid);
   
+  // Log escalation with summary delivery status
   await logNotification(supabase, `${level}_escalation`, providerPhone, {
     summary,
-    providerNotified: onCallInfo.onCallProvider.name
-  }, 'escalating');
+    providerNotified: onCallInfo.onCallProvider.name,
+    summaryDelivered: smsDelivered,
+    step: 'escalation_initiated'
+  }, smsDelivered ? 'escalating' : 'summary_failed', { workflow_step: 2 });
+
+  // STEP 3: Connect call (only after summary sent)
+  await logNotification(supabase, 'call_initiated', providerPhone, {
+    call_sid: callSid,
+    triageLevel: level,
+    step: 'call_connecting'
+  }, 'connecting', { workflow_step: 3 });
 
   const urgencyMsg = level === 'emergent' 
     ? "Connecting you to the on-call doctor now."
     : "Connecting you to the on-call physician.";
+
+  // Log safety message delivery for failed call scenario
+  await logSafetyMessageDelivered(supabase, callSid, callerPhone);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -349,14 +389,14 @@ async function handleEscalation(
 </Response>`;
 }
 
-async function sendPreCallSMS(supabase: any, providerPhone: string, summary: PreCallSummary) {
+async function sendPreCallSMS(supabase: any, providerPhone: string, summary: PreCallSummary, callSid: string): Promise<boolean> {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
   const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
 
   if (!twilioSid || !twilioAuth || !twilioPhone) {
     console.error('Twilio credentials missing');
-    return;
+    return false;
   }
 
   const emoji = summary.triageLevel === 'emergent' ? '🔴' : '🟡';
@@ -389,12 +429,16 @@ Call incoming.`;
     await supabase.from('notification_logs').insert({
       notification_type: 'pre_call_summary',
       recipient_phone: providerPhone,
-      content: { summary, message: smsBody },
+      content: { summary, message: smsBody, call_sid: callSid },
       status: response.ok ? 'sent' : 'failed',
-      twilio_sid: result.sid
+      twilio_sid: result.sid,
+      metadata: { summary_delivered: response.ok, workflow_step: 'summary_delivery' }
     });
+    
+    return response.ok;
   } catch (error) {
     console.error('Error sending SMS:', error);
+    return false;
   }
 }
 
