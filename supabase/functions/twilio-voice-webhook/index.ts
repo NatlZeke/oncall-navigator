@@ -1,10 +1,64 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-twilio-signature',
 };
+
+// Validate Twilio webhook signature using HMAC-SHA1
+async function validateTwilioSignature(
+  req: Request,
+  formData: FormData,
+  authToken: string
+): Promise<boolean> {
+  const signature = req.headers.get('x-twilio-signature');
+  if (!signature) {
+    console.error('Missing X-Twilio-Signature header');
+    return false;
+  }
+
+  // Build the full URL that Twilio used
+  const url = new URL(req.url);
+  let fullUrl = url.toString();
+
+  // For POST requests, append sorted form parameters
+  const params: [string, string][] = [];
+  formData.forEach((value, key) => {
+    params.push([key, value.toString()]);
+  });
+  params.sort((a, b) => a[0].localeCompare(b[0]));
+  
+  let data = fullUrl;
+  for (const [key, value] of params) {
+    data += key + value;
+  }
+
+  // Calculate HMAC-SHA1
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(authToken),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign']
+  );
+  
+  const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  const calculatedSignature = base64Encode(signatureBytes);
+
+  const isValid = signature === calculatedSignature;
+  if (!isValid) {
+    console.error('Invalid Twilio signature', { 
+      received: signature, 
+      calculated: calculatedSignature,
+      url: fullUrl 
+    });
+  }
+  
+  return isValid;
+}
 
 // Mock on-call data - ONE provider per office
 const mockOnCallData: Record<string, { 
@@ -84,9 +138,26 @@ serve(async (req) => {
   }
 
   try {
+    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+    if (!twilioAuthToken) {
+      console.error('TWILIO_AUTH_TOKEN not configured');
+      return new Response('Server configuration error', { status: 500, headers: corsHeaders });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Clone request to read body twice (for validation and processing)
+    const clonedReq = req.clone();
+    const formDataForValidation = await clonedReq.formData();
+    
+    // Validate Twilio signature
+    const isValid = await validateTwilioSignature(req, formDataForValidation, twilioAuthToken);
+    if (!isValid) {
+      console.error('Rejected request with invalid Twilio signature');
+      return new Response('Forbidden', { status: 403, headers: corsHeaders });
+    }
 
     const formData = await req.formData();
     const callSid = formData.get('CallSid') as string;
