@@ -14,7 +14,84 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      notification_logs: {
+        Row: {
+          content: Json | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          notification_type: string
+          office_id: string | null
+          recipient_phone: string | null
+          recipient_user_id: string | null
+          status: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          content?: Json | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          notification_type: string
+          office_id?: string | null
+          recipient_phone?: string | null
+          recipient_user_id?: string | null
+          status?: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          content?: Json | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          notification_type?: string
+          office_id?: string | null
+          recipient_phone?: string | null
+          recipient_user_id?: string | null
+          status?: string
+          twilio_sid?: string | null
+        }
+        Relationships: []
+      }
+      twilio_conversations: {
+        Row: {
+          call_sid: string
+          called_phone: string | null
+          caller_phone: string
+          conversation_type: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          status: string
+          transcript: Json | null
+          updated_at: string
+        }
+        Insert: {
+          call_sid: string
+          called_phone?: string | null
+          caller_phone: string
+          conversation_type?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          status?: string
+          transcript?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          call_sid?: string
+          called_phone?: string | null
+          caller_phone?: string
+          conversation_type?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          status?: string
+          transcript?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

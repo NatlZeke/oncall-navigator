@@ -25,6 +25,7 @@ import BillingPage from "./pages/BillingPage";
 import CompliancePage from "./pages/CompliancePage";
 import TwilioSettingsPage from "./pages/TwilioSettingsPage";
 import AfterHoursSchedulePage from "./pages/AfterHoursSchedulePage";
+import CallLogsPage from "./pages/CallLogsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/compliance" element={<CompliancePage />} />
             <Route path="/twilio" element={<TwilioSettingsPage />} />
             <Route path="/after-hours" element={<AfterHoursSchedulePage />} />
+            <Route path="/call-logs" element={<CallLogsPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
