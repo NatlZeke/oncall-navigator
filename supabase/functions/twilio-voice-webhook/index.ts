@@ -123,54 +123,77 @@ serve(async (req) => {
     const oncallProviderName = existingConversation.metadata?.oncall_name || onCallName;
     const officeName = existingConversation.metadata?.office_name || onCallInfo.officeName;
 
-    // Handle caller speech input - use AI to determine urgency
+    // Get conversation state
+    const conversationStage = existingConversation.metadata?.stage || 'initial';
+    const transcript = existingConversation.transcript || [];
+
+    // Handle caller speech input - use AI decision tree
     let responseAction = 'continue';
     let twiml = '';
 
     if (speechResult) {
-      console.log('Caller speech received:', speechResult);
+      console.log('Caller speech received:', speechResult, 'Stage:', conversationStage);
       
-      // Update conversation with transcript
+      // Add to transcript
+      const updatedTranscript = [...transcript, { role: 'caller', content: speechResult, timestamp: new Date().toISOString() }];
+      
+      // Use AI to analyze and determine next step
+      const aiDecision = await analyzeConversation(updatedTranscript, existingConversation.metadata);
+      console.log('AI decision:', aiDecision);
+
+      // Update conversation with transcript and stage
       await supabase
         .from('twilio_conversations')
         .update({
-          transcript: [...(existingConversation.transcript || []), { role: 'caller', content: speechResult, timestamp: new Date().toISOString() }],
-          metadata: { ...existingConversation.metadata, last_input: speechResult }
+          transcript: updatedTranscript,
+          metadata: { 
+            ...existingConversation.metadata, 
+            last_input: speechResult,
+            stage: aiDecision.nextStage,
+            urgency_assessment: aiDecision.isUrgent
+          }
         })
         .eq('id', existingConversation.id);
 
-      // Use AI to determine if this is an emergency requiring immediate callback
-      const isEmergency = await analyzeUrgency(speechResult);
-      console.log('AI urgency analysis:', { speechResult, isEmergency });
-
-      if (isEmergency) {
-        // Emergency - connect to on-call provider immediately
-        console.log('Emergency detected - transferring to:', oncallProviderPhone);
+      if (aiDecision.needsMoreInfo) {
+        // AI needs more details - ask follow-up question
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">I understand this is urgent. I am connecting you to the on-call provider now. Please hold.</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" action="${supabaseUrl}/functions/v1/twilio-voice-webhook">
+    <Say voice="alice">${escapeXml(aiDecision.followUpQuestion)}</Say>
+  </Gather>
+  <Say voice="alice">I didn't hear a response. Please leave a message after the beep with your name, phone number, and concern. If you feel this is an emergency, please hang up and call 911 or go to your nearest emergency room.</Say>
+  <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
+</Response>`;
+        responseAction = 'follow_up';
+      } else if (aiDecision.isUrgent) {
+        // Urgent - connect to on-call provider immediately
+        console.log('Urgent case detected - transferring to:', oncallProviderPhone);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Based on what you have described, I am connecting you to the on-call provider now. Please hold.</Say>
   <Dial timeout="30" callerId="${to}">
     <Number>${oncallProviderPhone}</Number>
   </Dial>
-  <Say voice="alice">The on-call provider is currently unavailable. Please leave a detailed message after the beep and they will call you back as soon as possible.</Say>
+  <Say voice="alice">The on-call provider is currently unavailable. Please leave a detailed message after the beep with your name, phone number, and symptoms. They will call you back as soon as possible.</Say>
   <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
-        responseAction = 'emergency_transfer';
+        responseAction = 'urgent_transfer';
       } else {
-        // Not urgent - take a message for next business day
-        console.log('Non-urgent call - taking message');
+        // Not urgent - take a message for next business day with safety override
+        console.log('Non-urgent assessment - taking message');
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thank you for that information. This does not appear to be an emergency. Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day.</Say>
+  <Say voice="alice">Based on your description, this does not appear to require immediate attention from the on-call provider. Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day. However, if you feel this assessment is in error, please hang up and call 911 or seek immediate assistance at an emergency room.</Say>
   <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
-        responseAction = 'message';
+        responseAction = 'message_non_urgent';
       }
     } else {
-      // No speech - default to leave message
+      // No speech - default to leave message with safety message
       twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day.</Say>
+  <Say voice="alice">Please leave a message after the beep with your name, phone number, and a brief description of your concern. We will return your call the next business day. If you feel this is an emergency, please hang up and call 911 or go to your nearest emergency room.</Say>
   <Record maxLength="180" action="${supabaseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
       responseAction = 'message_default';
@@ -274,6 +297,145 @@ Respond with ONLY "URGENT" or "NOT_URGENT" based on the caller's description. Wh
     // On error, be conservative - if they mention anything eye-related and concerning, treat as urgent
     const concerningKeywords = ['pain', 'vision', 'see', 'blind', 'emergency', 'urgent', 'severe'];
     return concerningKeywords.some(keyword => callerSpeech.toLowerCase().includes(keyword));
+  }
+}
+
+interface ConversationDecision {
+  needsMoreInfo: boolean;
+  isUrgent: boolean;
+  followUpQuestion: string;
+  nextStage: string;
+}
+
+// AI function to analyze full conversation and determine next step
+async function analyzeConversation(transcript: any[], metadata: any): Promise<ConversationDecision> {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  
+  // Build conversation history
+  const conversationText = transcript
+    .map(t => `${t.role === 'caller' ? 'Patient' : 'System'}: ${t.content}`)
+    .join('\n');
+  
+  const interactionCount = transcript.filter(t => t.role === 'caller').length;
+  
+  if (!LOVABLE_API_KEY) {
+    // Fallback without AI - check for emergency keywords
+    const lastMessage = transcript[transcript.length - 1]?.content || '';
+    const emergencyKeywords = ['emergency', 'urgent', 'severe', 'sudden', 'vision', 'blind', 'pain', 'injury', 'trauma'];
+    const isUrgent = emergencyKeywords.some(k => lastMessage.toLowerCase().includes(k));
+    
+    return {
+      needsMoreInfo: interactionCount < 2 && !isUrgent,
+      isUrgent,
+      followUpQuestion: "Can you tell me more about your symptoms? When did this start?",
+      nextStage: isUrgent ? 'urgent' : 'assessed'
+    };
+  }
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a medical triage AI for Hill Country Eye Center's after-hours answering service.
+
+Your job is to:
+1. Gather relevant information about the caller's eye concern
+2. Determine if the situation is URGENT (requires immediate on-call provider contact) or NON-URGENT (can wait for next business day)
+
+URGENT CONDITIONS (forward to on-call immediately):
+- Sudden vision loss, blurred vision, or vision changes
+- Eye trauma, injury, hit to the eye, or foreign objects in the eye
+- Chemical splash or exposure to the eye
+- Severe eye pain (not mild discomfort)
+- New flashes of light or sudden increase in floaters
+- Curtain, shadow, or veil over vision (possible retinal detachment)
+- Post-operative complications within 2 weeks of eye surgery
+- Severe eye infection symptoms (significant swelling, discharge, light sensitivity with pain)
+
+NON-URGENT CONDITIONS (next business day callback):
+- Routine prescription refills
+- Appointment scheduling
+- Mild dryness or irritation
+- Contact lens or glasses questions
+- Billing or insurance questions
+- Minor redness without severe symptoms
+- General questions
+
+DECISION TREE:
+- If you don't have enough information, ask ONE brief follow-up question
+- Maximum 2 follow-up questions before making a determination
+- When in doubt about urgency, err on the side of URGENT for patient safety
+- Keep questions brief (will be spoken aloud)
+
+Respond in JSON format:
+{
+  "needsMoreInfo": true/false,
+  "isUrgent": true/false,
+  "followUpQuestion": "Brief question if more info needed",
+  "reasoning": "Brief explanation",
+  "nextStage": "gathering/assessed/urgent"
+}`
+          },
+          {
+            role: 'user',
+            content: `Conversation so far:\n${conversationText}\n\nNumber of patient responses: ${interactionCount}\n\nAnalyze and determine next step.`
+          }
+        ],
+      }),
+    });
+
+    const data = await response.json();
+    const aiContent = data.choices?.[0]?.message?.content || '';
+    console.log('AI conversation analysis:', aiContent);
+    
+    // Parse JSON response
+    try {
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          needsMoreInfo: parsed.needsMoreInfo === true && interactionCount < 3,
+          isUrgent: parsed.isUrgent === true,
+          followUpQuestion: parsed.followUpQuestion || "Can you describe your symptoms in more detail?",
+          nextStage: parsed.nextStage || 'assessed'
+        };
+      }
+    } catch (parseError) {
+      console.error('Error parsing AI response:', parseError);
+    }
+    
+    // Fallback if parsing fails - check for urgency keywords in AI response
+    const isUrgent = aiContent.toLowerCase().includes('"isurgent": true') || 
+                     aiContent.toLowerCase().includes('"isurgent":true');
+    return {
+      needsMoreInfo: false,
+      isUrgent,
+      followUpQuestion: "",
+      nextStage: 'assessed'
+    };
+    
+  } catch (error) {
+    console.error('AI conversation analysis error:', error);
+    // On error, be conservative
+    const lastMessage = transcript[transcript.length - 1]?.content || '';
+    const concerningKeywords = ['pain', 'vision', 'see', 'blind', 'emergency', 'urgent', 'severe', 'sudden'];
+    const isUrgent = concerningKeywords.some(k => lastMessage.toLowerCase().includes(k));
+    
+    return {
+      needsMoreInfo: false,
+      isUrgent,
+      followUpQuestion: "",
+      nextStage: isUrgent ? 'urgent' : 'assessed'
+    };
   }
 }
 
