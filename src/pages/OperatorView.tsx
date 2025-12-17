@@ -1,10 +1,25 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { mockUsers } from '@/data/mockData';
-import { Phone, User, Clock, AlertCircle, Moon, Shield, AlertTriangle } from 'lucide-react';
+import { 
+  Phone, 
+  User, 
+  Clock, 
+  AlertCircle, 
+  Moon, 
+  Shield, 
+  AlertTriangle,
+  Eye,
+  FileText,
+  Info
+} from 'lucide-react';
 import { format, isWeekend } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { OphthalmologyTriageInfo } from '@/components/OphthalmologyTriageInfo';
+import { CallFlowVisualization, EscalationStatusIndicators } from '@/components/CallFlowVisualization';
+import { DemoMode } from '@/components/DemoMode';
 
 // Mock single on-call per office (matching webhook data)
 const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: string; afterHoursEnd: string }> = {
@@ -20,12 +35,15 @@ const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: 
   },
 };
 
-// Mock active escalations
+// Mock active escalations with status tracking
 const mockActiveEscalations: Array<{
   id: string;
-  status: 'initiated' | 'summary_sent' | 'acknowledged';
+  status: 'initiated' | 'summary_sent' | 'call_connected' | 'acknowledged';
   triageLevel: 'emergent' | 'urgent';
   initiatedAt: string;
+  summaryCreated: boolean;
+  summaryDelivered: boolean;
+  callInitiated: boolean;
 }> = [];
 
 const OperatorView = () => {
@@ -85,6 +103,9 @@ const OperatorView = () => {
             <div className="flex items-center gap-2">
               <p className="text-xs opacity-80">Operator View</p>
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary-foreground/20 text-primary-foreground border-0">
+                NON-CLINICAL
+              </Badge>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary-foreground/20 text-primary-foreground border-0">
                 READ-ONLY
               </Badge>
             </div>
@@ -97,147 +118,210 @@ const OperatorView = () => {
         </div>
       </header>
 
-      <main className="p-4 pb-24 space-y-6">
-        {/* Emergency Notice */}
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-medium">
-            For true emergencies, call 911 first, then contact on-call provider.
-          </p>
-        </div>
+      <main className="p-4 pb-24">
+        <Tabs defaultValue="oncall" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="oncall">On-Call</TabsTrigger>
+            <TabsTrigger value="protocol">Protocol</TabsTrigger>
+            <TabsTrigger value="demo">Demo</TabsTrigger>
+          </TabsList>
 
-        {/* Read-only notice */}
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border">
-          <Shield className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            This view is read-only. No PHI is displayed. Contact admin for export requests.
-          </p>
-        </div>
-
-        {/* After-Hours Status */}
-        <div className={cn(
-          'flex items-center gap-3 p-3 rounded-lg border',
-          isAfterHours 
-            ? 'bg-warning/10 border-warning/20' 
-            : 'bg-muted/50 border-border'
-        )}>
-          <Moon className={cn('h-5 w-5', isAfterHours ? 'text-warning' : 'text-muted-foreground')} />
-          <div>
-            <p className={cn('text-sm font-medium', isAfterHours ? 'text-warning' : 'text-muted-foreground')}>
-              {isAfterHours ? 'After-Hours Active' : 'Regular Business Hours'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              After-hours: {officeOnCall?.afterHoursStart || '17:00'} - {officeOnCall?.afterHoursEnd || '08:00'} + weekends
-            </p>
-          </div>
-        </div>
-
-        {/* Active Escalations (if any) */}
-        {mockActiveEscalations.length > 0 && (
-          <section>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              Active Escalations
-            </h2>
-            <div className="space-y-3">
-              {mockActiveEscalations.map((esc) => (
-                <div 
-                  key={esc.id} 
-                  className={cn(
-                    'p-4 rounded-xl border',
-                    esc.triageLevel === 'emergent' 
-                      ? 'bg-destructive/5 border-destructive/20' 
-                      : 'bg-warning/5 border-warning/20'
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <Badge variant={esc.triageLevel === 'emergent' ? 'destructive' : 'outline'}>
-                      {esc.triageLevel.toUpperCase()}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {esc.status === 'acknowledged' ? 'Doctor Engaged' : 'Pending'}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Started {format(new Date(esc.initiatedAt), 'h:mm a')}
-                  </p>
-                </div>
-              ))}
+          {/* On-Call Tab */}
+          <TabsContent value="oncall" className="space-y-4">
+            {/* Emergency Notice */}
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <p className="text-sm font-medium">
+                For true emergencies, call 911 first, then contact on-call provider.
+              </p>
             </div>
-          </section>
-        )}
 
-        {/* Single On-Call Provider */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="h-3 w-3 rounded-full bg-success animate-pulse-soft" />
-            <h2 className="text-lg font-bold">On-Call Provider</h2>
-          </div>
-
-          {onCallProvider ? (
-            <div className="rounded-2xl border bg-card overflow-hidden">
-              {/* Provider Card */}
-              <div className="p-4">
-                <a
-                  href={`tel:${onCallProvider.phone_mobile}`}
-                  className="flex items-center justify-between p-4 rounded-xl bg-success/10 border border-success/20 active:bg-success/20"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success text-success-foreground">
-                      <User className="h-8 w-8" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-success font-medium uppercase tracking-wide">On Call Now</p>
-                      <p className="text-xl font-bold">{onCallProvider.full_name}</p>
-                      <p className="text-lg text-muted-foreground">{onCallProvider.phone_mobile}</p>
-                    </div>
-                  </div>
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success text-success-foreground">
-                    <Phone className="h-7 w-7" />
-                  </div>
-                </a>
-              </div>
-
-              {/* Quick info */}
-              <div className="px-4 pb-4">
-                <div className="p-3 rounded-lg bg-muted/30">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>One provider on-call</strong> for all after-hours calls at this office.
-                  </p>
-                </div>
+            {/* Non-Clinical Disclaimer */}
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-muted border border-border">
+              <Shield className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Non-Clinical View</p>
+                <p className="text-xs text-muted-foreground">
+                  This view is for operators only. No PHI is displayed. No clinical interpretation 
+                  is provided. Contact admin for export requests.
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed p-8 text-center">
-              <Clock className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-4 text-muted-foreground font-medium">No on-call coverage assigned</p>
-              <p className="text-sm text-muted-foreground mt-1">Contact office administrator</p>
-            </div>
-          )}
-        </section>
 
-        {/* Office Contact */}
-        <section>
-          <h2 className="text-lg font-bold mb-4">Office Contact</h2>
-          <a
-            href={`tel:${currentOffice.phone_main}`}
-            className="flex items-center justify-between p-4 rounded-xl border bg-card active:bg-muted"
-          >
-            <div>
-              <p className="font-semibold">Main Office Line</p>
-              <p className="text-muted-foreground">{currentOffice.phone_main}</p>
+            {/* After-Hours Status */}
+            <div className={cn(
+              'flex items-center gap-3 p-3 rounded-lg border',
+              isAfterHours 
+                ? 'bg-warning/10 border-warning/20' 
+                : 'bg-muted/50 border-border'
+            )}>
+              <Moon className={cn('h-5 w-5', isAfterHours ? 'text-warning' : 'text-muted-foreground')} />
+              <div>
+                <p className={cn('text-sm font-medium', isAfterHours ? 'text-warning' : 'text-muted-foreground')}>
+                  {isAfterHours ? 'After-Hours Active' : 'Regular Business Hours'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  After-hours: {officeOnCall?.afterHoursStart || '17:00'} - {officeOnCall?.afterHoursEnd || '08:00'} + weekends
+                </p>
+              </div>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Phone className="h-5 w-5" />
+
+            {/* Active Escalations (if any) */}
+            {mockActiveEscalations.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-warning" />
+                  Active Escalations
+                </h2>
+                <div className="space-y-3">
+                  {mockActiveEscalations.map((esc) => (
+                    <div 
+                      key={esc.id} 
+                      className={cn(
+                        'p-4 rounded-xl border',
+                        esc.triageLevel === 'emergent' 
+                          ? 'bg-destructive/5 border-destructive/20' 
+                          : 'bg-warning/5 border-warning/20'
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <Badge variant={esc.triageLevel === 'emergent' ? 'destructive' : 'outline'}>
+                          {esc.triageLevel.toUpperCase()}
+                        </Badge>
+                        <EscalationStatusIndicators 
+                          summaryCreated={esc.summaryCreated}
+                          summaryDelivered={esc.summaryDelivered}
+                          callInitiated={esc.callInitiated}
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Started {format(new Date(esc.initiatedAt), 'h:mm a')}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {esc.status === 'acknowledged' ? '✓ Doctor Engaged' : 
+                         esc.status === 'call_connected' ? '📞 Call Connected' :
+                         esc.status === 'summary_sent' ? '📋 Summary Delivered' : '⏳ Processing'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Single On-Call Provider */}
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="h-3 w-3 rounded-full bg-success animate-pulse-soft" />
+                <h2 className="text-lg font-bold">On-Call Provider</h2>
+              </div>
+
+              {onCallProvider ? (
+                <div className="rounded-2xl border bg-card overflow-hidden">
+                  {/* Provider Card */}
+                  <div className="p-4">
+                    <a
+                      href={`tel:${onCallProvider.phone_mobile}`}
+                      className="flex items-center justify-between p-4 rounded-xl bg-success/10 border border-success/20 active:bg-success/20"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success text-success-foreground">
+                          <User className="h-8 w-8" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-success font-medium uppercase tracking-wide">On Call Now</p>
+                          <p className="text-xl font-bold">{onCallProvider.full_name}</p>
+                          <p className="text-lg text-muted-foreground">{onCallProvider.phone_mobile}</p>
+                        </div>
+                      </div>
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success text-success-foreground">
+                        <Phone className="h-7 w-7" />
+                      </div>
+                    </a>
+                  </div>
+
+                  {/* Quick info */}
+                  <div className="px-4 pb-4">
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <p className="text-sm text-muted-foreground">
+                        <strong>One provider on-call</strong> for all after-hours calls at this office.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed p-8 text-center">
+                  <Clock className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground font-medium">No on-call coverage assigned</p>
+                  <p className="text-sm text-muted-foreground mt-1">Contact office administrator</p>
+                </div>
+              )}
+            </section>
+
+            {/* Call Flow - Compact */}
+            <CallFlowVisualization compact showBenefits={false} />
+
+            {/* Office Contact */}
+            <section>
+              <h2 className="text-lg font-bold mb-4">Office Contact</h2>
+              <a
+                href={`tel:${currentOffice.phone_main}`}
+                className="flex items-center justify-between p-4 rounded-xl border bg-card active:bg-muted"
+              >
+                <div>
+                  <p className="font-semibold">Main Office Line</p>
+                  <p className="text-muted-foreground">{currentOffice.phone_main}</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Phone className="h-5 w-5" />
+                </div>
+              </a>
+            </section>
+          </TabsContent>
+
+          {/* Protocol Tab */}
+          <TabsContent value="protocol" className="space-y-4">
+            <OphthalmologyTriageInfo />
+            <CallFlowVisualization />
+            
+            {/* Safety Message Notice */}
+            <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-sm">Safety-Net Message (Always Delivered)</p>
+                  <p className="text-sm text-muted-foreground mt-1 italic">
+                    "If symptoms worsen, or there is sudden vision loss, severe pain, or a curtain 
+                    in vision, go immediately to the nearest emergency room."
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ✓ Delivery of this message is logged for compliance.
+                  </p>
+                </div>
+              </div>
             </div>
-          </a>
-        </section>
+          </TabsContent>
+
+          {/* Demo Tab */}
+          <TabsContent value="demo" className="space-y-4">
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-sm">Validation & Demo Mode</p>
+                <p className="text-xs text-muted-foreground">
+                  Run simulations to see how different symptom presentations are triaged and 
+                  when the on-call doctor is (or is not) contacted.
+                </p>
+              </div>
+            </div>
+            <DemoMode />
+          </TabsContent>
+        </Tabs>
 
         {/* Safety Footer */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t">
           <p className="text-xs text-center text-muted-foreground">
             <Shield className="h-3 w-3 inline mr-1" />
-            Operator view is read-only • No exports • No PHI displayed
+            Non-clinical operator view • Read-only • No exports • No PHI displayed
           </p>
         </div>
       </main>
