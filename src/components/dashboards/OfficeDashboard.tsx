@@ -1,34 +1,74 @@
-import { Clock, AlertTriangle, FileText, ChevronRight, Calendar, BarChart3, ClipboardList } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Clock, AlertTriangle, FileText, ChevronRight, Calendar, BarChart3, ClipboardList, Loader2 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { supabase } from '@/integrations/supabase/client';
 import { StatCard } from '@/components/StatCard';
 import { SingleOnCallCard } from '@/components/SingleOnCallCard';
 import { HeroSection } from '@/components/HeroSection';
 import { getSingleOnCallProvider, getShiftsForOffice } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { format, addDays } from 'date-fns';
+import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
+
+interface DbOnCallAssignment {
+  id: string;
+  provider_name: string;
+  provider_phone: string;
+  provider_user_id: string;
+  after_hours_start: string;
+  after_hours_end: string;
+}
 
 export function OfficeDashboard() {
   const { currentOffice } = useApp();
+  const [dbAssignment, setDbAssignment] = useState<DbOnCallAssignment | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (currentOffice) {
+      fetchTodayAssignment();
+    }
+  }, [currentOffice]);
+
+  const fetchTodayAssignment = async () => {
+    if (!currentOffice) return;
+    
+    setLoading(true);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    const { data, error } = await supabase
+      .from('oncall_assignments')
+      .select('*')
+      .eq('office_id', currentOffice.id)
+      .eq('assignment_date', today)
+      .maybeSingle();
+
+    if (!error && data) {
+      setDbAssignment(data);
+    }
+    setLoading(false);
+  };
 
   if (!currentOffice) {
     return <div>No office selected</div>;
   }
 
-  const singleOnCall = getSingleOnCallProvider(currentOffice.id);
+  // Use database assignment if available, fallback to mock
+  const singleOnCall = dbAssignment 
+    ? {
+        provider: {
+          id: dbAssignment.provider_user_id,
+          full_name: dbAssignment.provider_name,
+          phone_mobile: dbAssignment.provider_phone,
+        },
+        afterHoursStart: dbAssignment.after_hours_start?.slice(0, 5) || '17:00',
+        afterHoursEnd: dbAssignment.after_hours_end?.slice(0, 5) || '08:00',
+      }
+    : getSingleOnCallProvider(currentOffice.id);
+
   const allShifts = getShiftsForOffice(currentOffice.id);
   const draftShifts = allShifts.filter((s) => s.status === 'draft');
-
-  // Get upcoming shifts for next 48 hours
-  const now = new Date();
-  const next48h = addDays(now, 2);
-  const upcomingShifts = allShifts
-    .filter((s) => {
-      const start = new Date(s.start_time);
-      return start > now && start < next48h;
-    })
-    .slice(0, 3);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -88,7 +128,10 @@ export function OfficeDashboard() {
 
       {/* Single On-Call Provider */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">On-Call Provider</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">On-Call Provider</h2>
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        </div>
         {singleOnCall ? (
           <SingleOnCallCard 
             provider={singleOnCall.provider}
@@ -98,7 +141,7 @@ export function OfficeDashboard() {
         ) : (
           <div className="rounded-xl border border-dashed p-8 text-center">
             <Clock className="mx-auto h-10 w-10 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">No on-call coverage assigned</p>
+            <p className="mt-4 text-muted-foreground">No on-call coverage assigned for today</p>
             <Link to="/after-hours">
               <Button variant="link" className="mt-2">Configure Schedule</Button>
             </Link>
@@ -143,9 +186,9 @@ export function OfficeDashboard() {
         <div className="p-4">
           <div className="space-y-4">
             {[
-              { action: 'On-call assigned', details: 'Dr. Restivo - Dec 17-18', time: '2 hours ago' },
+              { action: 'On-call assigned', details: `${singleOnCall?.provider.full_name?.split(',')[0] || 'Provider'} - Today`, time: 'Current' },
               { action: 'Schedule published', details: 'December on-call rotation', time: '5 hours ago' },
-              { action: 'Provider changed', details: 'Dec 20 - switched to Dr. Shepler', time: '1 day ago' },
+              { action: 'Swap approved', details: 'Dec 20 - coverage transferred', time: '1 day ago' },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 text-sm">
                 <div className="mt-1 h-2 w-2 rounded-full bg-accent" />
