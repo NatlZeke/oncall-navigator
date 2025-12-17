@@ -21,39 +21,39 @@ export const mockFacilities: Facility[] = [
   {
     id: 'facility-1',
     office_id: 'office-1',
-    name: 'NYC Downtown Main Building',
-    address: '123 Park Avenue, Floor 1-3, New York, NY 10017',
+    name: 'Cedar Park Main Building',
+    address: '11901 W Parmer Ln #400, Cedar Park, TX 78613',
     status: 'active',
     created_at: '2024-01-01T00:00:00Z',
   },
   {
     id: 'facility-2',
     office_id: 'office-1',
-    name: 'NYC Downtown Surgery Center',
-    address: '125 Park Avenue, New York, NY 10017',
+    name: 'Cedar Park Surgery Center',
+    address: '11901 W Parmer Ln #450, Cedar Park, TX 78613',
     status: 'active',
     created_at: '2024-01-01T00:00:00Z',
   },
   {
     id: 'facility-3',
     office_id: 'office-2',
-    name: 'LA Westside Main Clinic',
-    address: '456 Wilshire Blvd, Suite 100, Los Angeles, CA 90024',
+    name: 'Georgetown Clinic',
+    address: '4500 Williams Dr, Suite 228, Georgetown, TX 78633',
     status: 'active',
     created_at: '2024-01-15T00:00:00Z',
   },
 ];
 
-// Provider Credentials
+// Provider Credentials - Hill Country Eye Center Doctors
 export const mockProviderCredentials: ProviderCredential[] = [
   {
     id: 'cred-1',
     office_id: 'office-1',
     user_id: 'user-1',
     npi: '1234567890',
-    license_state: 'NY',
-    license_number: 'NY-MD-123456',
-    license_expiration: '2025-12-31',
+    license_state: 'TX',
+    license_number: 'TX-MD-123456',
+    license_expiration: '2026-12-31',
     malpractice_expiration: '2025-06-30',
     credentialing_status: 'active',
     created_at: '2024-01-01T00:00:00Z',
@@ -63,10 +63,10 @@ export const mockProviderCredentials: ProviderCredential[] = [
     office_id: 'office-1',
     user_id: 'user-2',
     npi: '2345678901',
-    license_state: 'NY',
-    license_number: 'NY-MD-234567',
-    license_expiration: '2025-03-15',
-    malpractice_expiration: '2025-01-31',
+    license_state: 'TX',
+    license_number: 'TX-MD-234567',
+    license_expiration: '2025-08-15',
+    malpractice_expiration: '2025-08-31',
     credentialing_status: 'active',
     created_at: '2024-01-01T00:00:00Z',
   },
@@ -75,89 +75,71 @@ export const mockProviderCredentials: ProviderCredential[] = [
     office_id: 'office-1',
     user_id: 'user-3',
     npi: '3456789012',
-    license_state: 'NY',
-    license_number: 'NY-MD-345678',
-    license_expiration: '2024-01-15',
-    credentialing_status: 'expired',
+    license_state: 'TX',
+    license_number: 'TX-OD-345678',
+    license_expiration: '2025-11-30',
+    malpractice_expiration: '2025-11-30',
+    credentialing_status: 'active',
     created_at: '2024-01-01T00:00:00Z',
   },
   {
     id: 'cred-4',
-    office_id: 'office-2',
+    office_id: 'office-1',
     user_id: 'user-4',
     npi: '4567890123',
-    license_state: 'CA',
-    license_number: 'CA-MD-456789',
-    license_expiration: '2026-08-20',
-    malpractice_expiration: '2025-08-20',
+    license_state: 'TX',
+    license_number: 'TX-OD-456789',
+    license_expiration: '2026-03-20',
+    malpractice_expiration: '2025-12-20',
     credentialing_status: 'active',
     created_at: '2024-01-15T00:00:00Z',
   },
-  {
-    id: 'cred-5',
-    office_id: 'office-2',
-    user_id: 'user-5',
-    npi: '5678901234',
-    license_state: 'CA',
-    license_number: 'CA-MD-567890',
-    license_expiration: '2025-11-30',
-    credentialing_status: 'pending',
-    created_at: '2024-01-15T00:00:00Z',
-  },
-  {
-    id: 'cred-6',
-    office_id: 'office-2',
-    user_id: 'user-6',
-    npi: '6789012345',
-    license_state: 'CA',
-    license_number: 'CA-MD-678901',
-    license_expiration: '2025-05-15',
-    credentialing_status: 'suspended',
-    created_at: '2024-01-15T00:00:00Z',
-  },
 ];
 
-// Provider Privileges
+// Provider Privileges - Hill Country Eye Center
 export const mockProviderPrivileges: ProviderPrivilege[] = [
-  // User 1 privileges
+  // Dr. Restivo privileges - Cataract Surgery, Glaucoma, LASIK
   { id: 'priv-1', office_id: 'office-1', user_id: 'user-1', service_line_id: 'sl-1', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
   { id: 'priv-2', office_id: 'office-1', user_id: 'user-1', service_line_id: 'sl-2', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
-  // User 2 privileges
-  { id: 'priv-3', office_id: 'office-1', user_id: 'user-2', service_line_id: 'sl-1', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
-  { id: 'priv-4', office_id: 'office-1', user_id: 'user-2', service_line_id: 'sl-2', privileged: false, effective_start: '2024-01-01', notes: 'Pending subspecialty training', created_at: '2024-01-01T00:00:00Z' },
-  // User 3 privileges (expired credentials)
-  { id: 'priv-5', office_id: 'office-1', user_id: 'user-3', service_line_id: 'sl-1', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
+  { id: 'priv-3', office_id: 'office-2', user_id: 'user-1', service_line_id: 'sl-5', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
+  // Dr. Shepler privileges - Oculoplastics only
+  { id: 'priv-4', office_id: 'office-1', user_id: 'user-2', service_line_id: 'sl-3', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
+  { id: 'priv-5', office_id: 'office-1', user_id: 'user-2', service_line_id: 'sl-1', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
+  // Dr. Osterman privileges - Glaucoma specialist
   { id: 'priv-6', office_id: 'office-1', user_id: 'user-3', service_line_id: 'sl-2', privileged: true, effective_start: '2024-01-01', created_at: '2024-01-01T00:00:00Z' },
-  // LA Office privileges
-  { id: 'priv-7', office_id: 'office-2', user_id: 'user-4', service_line_id: 'sl-3', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
-  { id: 'priv-8', office_id: 'office-2', user_id: 'user-4', service_line_id: 'sl-4', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
-  { id: 'priv-9', office_id: 'office-2', user_id: 'user-5', service_line_id: 'sl-3', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
-  { id: 'priv-10', office_id: 'office-2', user_id: 'user-6', service_line_id: 'sl-4', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
+  { id: 'priv-7', office_id: 'office-2', user_id: 'user-3', service_line_id: 'sl-4', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
+  // Dr. Devitt privileges - General, pre/post-op care
+  { id: 'priv-8', office_id: 'office-1', user_id: 'user-4', service_line_id: 'sl-1', privileged: true, effective_start: '2024-01-15', notes: 'Pre/post-operative care only', created_at: '2024-01-15T00:00:00Z' },
+  { id: 'priv-9', office_id: 'office-1', user_id: 'user-4', service_line_id: 'sl-2', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
+  { id: 'priv-10', office_id: 'office-2', user_id: 'user-4', service_line_id: 'sl-4', privileged: true, effective_start: '2024-01-15', created_at: '2024-01-15T00:00:00Z' },
 ];
 
-// Coverage Groups
+// Coverage Groups - Hill Country Eye Center
 export const mockCoverageGroups: CoverageGroup[] = [
   {
     id: 'cg-1',
     company_id: 'company-1',
-    name: 'General Ophthalmology Coverage Pool',
+    name: 'Cataract & General Surgery Pool',
     created_at: '2024-01-01T00:00:00Z',
   },
   {
     id: 'cg-2',
     company_id: 'company-1',
-    name: 'Retina Specialists Network',
+    name: 'Glaucoma Specialists Network',
     created_at: '2024-01-01T00:00:00Z',
   },
 ];
 
 // Coverage Group Members
 export const mockCoverageGroupMembers: CoverageGroupMember[] = [
+  // Cataract & General Surgery Pool
   { id: 'cgm-1', coverage_group_id: 'cg-1', office_id: 'office-1', user_id: 'user-1', service_line_id: 'sl-1', priority_rank: 1, active: true },
   { id: 'cgm-2', coverage_group_id: 'cg-1', office_id: 'office-1', user_id: 'user-2', service_line_id: 'sl-1', priority_rank: 2, active: true },
-  { id: 'cgm-3', coverage_group_id: 'cg-1', office_id: 'office-2', user_id: 'user-4', service_line_id: 'sl-3', priority_rank: 3, active: true },
-  { id: 'cgm-4', coverage_group_id: 'cg-2', office_id: 'office-1', user_id: 'user-1', service_line_id: 'sl-2', priority_rank: 1, active: true },
-  { id: 'cgm-5', coverage_group_id: 'cg-2', office_id: 'office-1', user_id: 'user-3', service_line_id: 'sl-2', priority_rank: 2, active: false },
+  { id: 'cgm-3', coverage_group_id: 'cg-1', office_id: 'office-2', user_id: 'user-4', service_line_id: 'sl-4', priority_rank: 3, active: true },
+  // Glaucoma Specialists
+  { id: 'cgm-4', coverage_group_id: 'cg-2', office_id: 'office-1', user_id: 'user-3', service_line_id: 'sl-2', priority_rank: 1, active: true },
+  { id: 'cgm-5', coverage_group_id: 'cg-2', office_id: 'office-1', user_id: 'user-4', service_line_id: 'sl-2', priority_rank: 2, active: true },
+  { id: 'cgm-6', coverage_group_id: 'cg-2', office_id: 'office-1', user_id: 'user-1', service_line_id: 'sl-2', priority_rank: 3, active: true },
 ];
 
 // Advanced Coverage Rules
