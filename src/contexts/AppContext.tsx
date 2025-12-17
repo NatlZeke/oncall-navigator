@@ -15,7 +15,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentUser] = useState<User | null>(mockUsers[8]); // Alice Manager (company owner)
+  const [currentUser] = useState<User | null>(mockUsers[5]); // Maria Santos (admin)
   const [currentCompany] = useState<Company | null>(mockCompany);
   const [currentOffice, setCurrentOffice] = useState<Office | null>(mockOffices[0]);
   const [isCompanyLevel, setIsCompanyLevel] = useState(false);
