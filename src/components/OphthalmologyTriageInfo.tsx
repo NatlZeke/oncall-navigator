@@ -84,26 +84,37 @@ export function OphthalmologyTriageInfo() {
           <CardTitle>Ophthalmology-Specific Clinical Decision Tree</CardTitle>
         </div>
         <CardDescription>
-          All after-hours calls are processed through this <strong>ophthalmology-specific</strong> triage protocol.
-          The AI agent enforces these questions in a fixed order and cannot bypass them.
+          All after-hours calls are <strong>explicitly screened for eye-related emergencies</strong> using 
+          this ophthalmology-specific triage protocol. The AI agent enforces these questions in a fixed 
+          order and cannot bypass them.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Eye Red Flags - EXPLICIT */}
-        <div className="p-4 rounded-lg bg-destructive/5 border border-destructive/20">
-          <h4 className="font-semibold mb-2 flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-4 w-4" />
-            Eye-Specific Red Flags Evaluated
+        {/* EXPLICIT Red Flags Section - Primary Focus */}
+        <div className="p-4 rounded-lg bg-destructive/10 border-2 border-destructive/30">
+          <h4 className="font-bold text-base mb-3 flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            Eye-Specific Red Flags — Explicitly Screened
           </h4>
-          <p className="text-sm text-muted-foreground mb-3">
-            The system explicitly screens for these ophthalmologic emergencies:
+          <p className="text-sm text-muted-foreground mb-4">
+            Every after-hours call is specifically screened for these ophthalmologic emergencies. 
+            Detection of ANY red flag triggers immediate escalation to the on-call physician:
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            {['Sudden vision loss', 'Flashes & floaters with curtain/shadow', 'Severe eye pain', 
-              'Post-op vision change or pain', 'Trauma or chemical exposure', 'Acute angle closure'].map((flag) => (
-              <div key={flag} className="flex items-center gap-2 text-sm">
-                <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                <span>{flag}</span>
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              { flag: 'Sudden Vision Loss', desc: 'Any acute blindness or sudden vision changes' },
+              { flag: 'Flashes, Floaters, Curtain or Shadow', desc: 'New onset visual disturbances suggesting retinal issues' },
+              { flag: 'Severe Eye Pain', desc: 'Intense pain rated as severe or worst-ever' },
+              { flag: 'Post-Op Vision Change or Pain', desc: 'Any concerning symptoms following eye surgery' },
+              { flag: 'Trauma or Chemical Exposure', desc: 'Physical injury or chemical contact with eye' },
+              { flag: 'Acute Angle Closure Symptoms', desc: 'Halos, nausea, severe headache with eye pain' },
+            ].map((item) => (
+              <div key={item.flag} className="flex items-start gap-2 p-2 rounded bg-background border border-destructive/20">
+                <div className="h-2 w-2 rounded-full bg-destructive mt-1.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-destructive">{item.flag}</p>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -164,17 +175,36 @@ export function OphthalmologyTriageInfo() {
           ))}
         </div>
 
-        {/* AI Disclaimer */}
-        <div className="flex items-start gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
-          <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-sm">AI Intake Guardrails</p>
-            <ul className="text-sm text-muted-foreground mt-1 space-y-1">
-              <li>• The AI does <strong>not</strong> provide diagnoses</li>
-              <li>• The AI does <strong>not</strong> give treatment instructions</li>
-              <li>• The AI uses plain-language symptom questions only</li>
-              <li>• All clinical judgment is made by the on-call provider</li>
-            </ul>
+        {/* AI Scope Declaration - Enhanced */}
+        <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+          <div className="flex items-start gap-3">
+            <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-sm mb-2">AI Intake Scope (Non-Diagnostic)</p>
+              <div className="grid gap-2 md:grid-cols-2 text-sm">
+                <div>
+                  <p className="text-xs font-medium text-success mb-1">✓ AI DOES:</p>
+                  <ul className="text-muted-foreground space-y-0.5 text-xs">
+                    <li>• Collect patient information</li>
+                    <li>• Evaluate urgency via red flag questions</li>
+                    <li>• Route calls appropriately</li>
+                    <li>• Generate structured summaries</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-destructive mb-1">✗ AI DOES NOT:</p>
+                  <ul className="text-muted-foreground space-y-0.5 text-xs">
+                    <li>• Diagnose any condition</li>
+                    <li>• Provide treatment advice</li>
+                    <li>• Interpret symptoms clinically</li>
+                    <li>• Make clinical decisions</li>
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3 pt-2 border-t">
+                <strong>All clinical judgment is made exclusively by the on-call physician.</strong>
+              </p>
+            </div>
           </div>
         </div>
       </CardContent>
