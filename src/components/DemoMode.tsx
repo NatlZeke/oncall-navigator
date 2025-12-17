@@ -27,51 +27,51 @@ const scenarios = [
   {
     id: 'emergent' as const,
     title: 'Emergent: Sudden Vision Loss',
-    description: 'Patient reports sudden blindness in right eye with floaters',
+    description: 'Patient reports sudden blindness in right eye with floaters - an eye emergency',
     badge: 'destructive' as const,
     icon: AlertTriangle,
-    outcome: 'Immediate escalation to on-call provider',
+    outcome: '✓ DOCTOR CONTACTED - Immediate escalation with pre-call summary',
     doctorContacted: true,
     steps: [
       'AI: "What symptoms are you experiencing?"',
       'Patient: "I suddenly can\'t see out of my right eye, and I see floaters"',
-      'AI detects: EMERGENT - sudden vision loss + floaters',
-      'Summary SMS sent to on-call doctor',
-      'Call connected to Dr. Restivo'
+      '🔴 AI detects EYE RED FLAG: sudden vision loss + floaters',
+      '📋 Summary SMS delivered to on-call doctor',
+      '📞 Call connected to Dr. Restivo'
     ]
   },
   {
     id: 'urgent' as const,
-    title: 'Urgent: Post-Op Pain',
+    title: 'Urgent: Post-Op Complication',
     description: 'Patient had cataract surgery 3 days ago, experiencing moderate pain',
     badge: 'secondary' as const,
     icon: Clock,
-    outcome: 'Escalation with summary to on-call provider',
+    outcome: '✓ DOCTOR CONTACTED - Escalation with structured summary',
     doctorContacted: true,
     steps: [
       'AI: "Have you had eye surgery recently?"',
       'Patient: "Yes, cataract surgery 3 days ago"',
       'AI: "What symptoms are you experiencing?"',
       'Patient: "Moderate pain and some redness"',
-      'AI classifies: URGENT - post-op concern',
-      'Summary SMS sent → Call connected'
+      '🟡 AI classifies: URGENT - post-operative concern',
+      '📋 Summary SMS delivered → 📞 Call connected'
     ]
   },
   {
     id: 'non-urgent' as const,
-    title: 'Non-Urgent: Dry Eye',
-    description: 'Patient has mild eye irritation and dryness for past week',
+    title: 'Non-Urgent: Dry Eye Irritation',
+    description: 'Patient has mild eye irritation and dryness for past week - stable symptoms',
     badge: 'outline' as const,
     icon: Voicemail,
-    outcome: 'Voicemail for next business day callback',
+    outcome: '✗ NO DOCTOR WAKE-UP - Voicemail recorded for business hours',
     doctorContacted: false,
     steps: [
       'AI: "What symptoms are you experiencing?"',
       'Patient: "My eyes have been dry and a little irritated"',
       'AI: "Is this getting worse or staying the same?"',
       'Patient: "About the same for a week"',
-      'AI classifies: NON-URGENT - stable mild symptoms',
-      'Voicemail recorded → No doctor wake-up'
+      '⚪ AI classifies: NON-URGENT - stable mild symptoms, no red flags',
+      '📝 Voicemail recorded → Doctor NOT contacted'
     ]
   }
 ];
