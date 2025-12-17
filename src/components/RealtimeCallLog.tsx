@@ -4,9 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Phone, Voicemail, UserCheck, Clock, RefreshCw, Filter, Calendar } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Phone, Voicemail, UserCheck, Clock, RefreshCw, Filter, Calendar, ChevronDown, MessageSquare, Bot, User } from 'lucide-react';
 import { format, subDays, subHours, isAfter } from 'date-fns';
 import { cn } from '@/lib/utils';
+
+interface TranscriptEntry {
+  role: 'assistant' | 'user' | 'system';
+  content: string;
+  timestamp?: string;
+}
 
 interface CallLog {
   id: string;
@@ -14,6 +21,7 @@ interface CallLog {
   caller_phone: string;
   status: string;
   created_at: string;
+  transcript: TranscriptEntry[] | null;
   metadata: {
     triage_level?: string;
     escalated?: boolean;
@@ -30,6 +38,7 @@ export function RealtimeCallLog() {
   const [loading, setLoading] = useState(true);
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('24h');
+  const [expandedCall, setExpandedCall] = useState<string | null>(null);
 
   // Fetch initial calls
   useEffect(() => {
@@ -41,7 +50,7 @@ export function RealtimeCallLog() {
         .limit(100);
 
       if (!error && data) {
-        setCalls(data as CallLog[]);
+        setCalls(data as unknown as CallLog[]);
       }
       setLoading(false);
     };
@@ -62,10 +71,10 @@ export function RealtimeCallLog() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setCalls(prev => [payload.new as CallLog, ...prev].slice(0, 100));
+            setCalls(prev => [payload.new as unknown as CallLog, ...prev].slice(0, 100));
           } else if (payload.eventType === 'UPDATE') {
             setCalls(prev => prev.map(call => 
-              call.id === (payload.new as CallLog).id ? payload.new as CallLog : call
+              call.id === (payload.new as CallLog).id ? payload.new as unknown as CallLog : call
             ));
           }
         }
@@ -215,83 +224,157 @@ export function RealtimeCallLog() {
             <p className="text-xs">Try adjusting your date range or outcome filter</p>
           </div>
         ) : (
-          <ScrollArea className="h-[300px]">
+          <ScrollArea className="h-[350px]">
             <div className="space-y-2">
               {filteredCalls.map((call) => {
                 const outcome = getTriageOutcome(call);
                 const isEscalated = outcome.type === 'escalated';
+                const isExpanded = expandedCall === call.id;
+                const hasTranscript = call.transcript && Array.isArray(call.transcript) && call.transcript.length > 0;
                 
                 return (
-                  <div
+                  <Collapsible
                     key={call.id}
-                    className={cn(
-                      "p-3 rounded-lg border transition-colors",
-                      isEscalated 
-                        ? "bg-destructive/5 border-destructive/20" 
-                        : "bg-muted/30 border-border"
-                    )}
+                    open={isExpanded}
+                    onOpenChange={(open) => setExpandedCall(open ? call.id : null)}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        {isEscalated ? (
-                          <UserCheck className="h-4 w-4 text-destructive" />
-                        ) : (
-                          <Voicemail className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <span className="font-medium text-sm">
-                          {formatPhone(call.caller_phone)}
-                        </span>
-                      </div>
-                      <Badge 
-                        variant={isEscalated ? "destructive" : "secondary"}
-                        className="text-[10px]"
-                      >
-                        {isEscalated ? (
-                          <span className="flex items-center gap-1">
-                            <UserCheck className="h-3 w-3" />
-                            {outcome.label}
+                    <div
+                      className={cn(
+                        "rounded-lg border transition-colors",
+                        isEscalated 
+                          ? "bg-destructive/5 border-destructive/20" 
+                          : "bg-muted/30 border-border"
+                      )}
+                    >
+                      <CollapsibleTrigger className="w-full p-3 text-left">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            {isEscalated ? (
+                              <UserCheck className="h-4 w-4 text-destructive" />
+                            ) : (
+                              <Voicemail className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span className="font-medium text-sm">
+                              {formatPhone(call.caller_phone)}
+                            </span>
+                            {hasTranscript && (
+                              <Badge variant="outline" className="text-[9px] px-1.5">
+                                <MessageSquare className="h-2.5 w-2.5 mr-0.5" />
+                                Transcript
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge 
+                              variant={isEscalated ? "destructive" : "secondary"}
+                              className="text-[10px]"
+                            >
+                              {isEscalated ? (
+                                <span className="flex items-center gap-1">
+                                  <UserCheck className="h-3 w-3" />
+                                  {outcome.label}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  <Voicemail className="h-3 w-3" />
+                                  {outcome.label}
+                                </span>
+                              )}
+                            </Badge>
+                            <ChevronDown className={cn(
+                              "h-4 w-4 text-muted-foreground transition-transform",
+                              isExpanded && "rotate-180"
+                            )} />
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {format(new Date(call.created_at), 'MMM d, h:mm a')}
+                          </div>
+                          <span className={cn(
+                            "capitalize",
+                            call.status === 'completed' && "text-success",
+                            call.status === 'in_progress' && "text-warning"
+                          )}>
+                            {call.status.replace('_', ' ')}
                           </span>
-                        ) : (
-                          <span className="flex items-center gap-1">
-                            <Voicemail className="h-3 w-3" />
-                            {outcome.label}
-                          </span>
+                        </div>
+
+                        {/* Red flags if escalated */}
+                        {isEscalated && call.metadata?.red_flags && call.metadata.red_flags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {call.metadata.red_flags.map((flag, i) => (
+                              <Badge key={i} variant="outline" className="text-[9px] bg-destructive/10 border-destructive/20 text-destructive">
+                                {flag}
+                              </Badge>
+                            ))}
+                          </div>
                         )}
-                      </Badge>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {format(new Date(call.created_at), 'MMM d, h:mm a')}
-                      </div>
-                      <span className={cn(
-                        "capitalize",
-                        call.status === 'completed' && "text-success",
-                        call.status === 'in_progress' && "text-warning"
-                      )}>
-                        {call.status.replace('_', ' ')}
-                      </span>
-                    </div>
 
-                    {/* Red flags if escalated */}
-                    {isEscalated && call.metadata?.red_flags && call.metadata.red_flags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {call.metadata.red_flags.map((flag, i) => (
-                          <Badge key={i} variant="outline" className="text-[9px] bg-destructive/10 border-destructive/20 text-destructive">
-                            {flag}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                        {/* Safety message indicator */}
+                        {call.metadata?.safety_message_delivered && (
+                          <div className="mt-1 text-[10px] text-success flex items-center gap-1">
+                            ✓ Safety message delivered
+                          </div>
+                        )}
+                      </CollapsibleTrigger>
 
-                    {/* Safety message indicator */}
-                    {call.metadata?.safety_message_delivered && (
-                      <div className="mt-1 text-[10px] text-success flex items-center gap-1">
-                        ✓ Safety message delivered
-                      </div>
-                    )}
-                  </div>
+                      {/* Expandable Transcript */}
+                      <CollapsibleContent>
+                        <div className="px-3 pb-3 border-t border-border/50 pt-3 mt-1">
+                          <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-muted-foreground">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Conversation Transcript
+                          </div>
+                          
+                          {hasTranscript ? (
+                            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                              {(call.transcript as TranscriptEntry[]).map((entry, i) => (
+                                <div 
+                                  key={i} 
+                                  className={cn(
+                                    "flex gap-2 text-xs",
+                                    entry.role === 'assistant' && "flex-row",
+                                    entry.role === 'user' && "flex-row-reverse"
+                                  )}
+                                >
+                                  <div className={cn(
+                                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                                    entry.role === 'assistant' ? "bg-primary/10" : "bg-muted"
+                                  )}>
+                                    {entry.role === 'assistant' ? (
+                                      <Bot className="h-3.5 w-3.5 text-primary" />
+                                    ) : (
+                                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                  <div className={cn(
+                                    "rounded-lg px-3 py-2 max-w-[85%]",
+                                    entry.role === 'assistant' 
+                                      ? "bg-primary/5 text-foreground" 
+                                      : "bg-muted text-foreground"
+                                  )}>
+                                    <p>{entry.content}</p>
+                                    {entry.timestamp && (
+                                      <p className="text-[10px] text-muted-foreground mt-1">
+                                        {entry.timestamp}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground italic py-2">
+                              No transcript available for this call.
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </div>
+                  </Collapsible>
                 );
               })}
             </div>
