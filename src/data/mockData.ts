@@ -457,6 +457,27 @@ export function getCurrentOnCall(officeId: string) {
   });
 }
 
+// Single on-call provider per office (new simplified model)
+export function getSingleOnCallProvider(officeId: string): { provider: User; afterHoursStart: string; afterHoursEnd: string } | null {
+  // Mock data: one provider on-call per office
+  const onCallAssignments: Record<string, { userId: string; afterHoursStart: string; afterHoursEnd: string }> = {
+    'office-1': { userId: 'user-1', afterHoursStart: '17:00', afterHoursEnd: '08:00' },
+    'office-2': { userId: 'user-4', afterHoursStart: '17:00', afterHoursEnd: '08:00' },
+  };
+
+  const assignment = onCallAssignments[officeId];
+  if (!assignment) return null;
+
+  const provider = getUserById(assignment.userId);
+  if (!provider) return null;
+
+  return {
+    provider,
+    afterHoursStart: assignment.afterHoursStart,
+    afterHoursEnd: assignment.afterHoursEnd,
+  };
+}
+
 // Phase 2: Helper functions
 export function getAvailabilityForOffice(officeId: string): AvailabilityBlock[] {
   return mockAvailabilityBlocks.filter(a => a.office_id === officeId).map(block => ({

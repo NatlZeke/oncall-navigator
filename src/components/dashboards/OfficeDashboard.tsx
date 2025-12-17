@@ -1,9 +1,9 @@
-import { Clock, AlertTriangle, FileText, ChevronRight, Calendar, Bot, Phone, BarChart3, ClipboardList } from 'lucide-react';
+import { Clock, AlertTriangle, FileText, ChevronRight, Calendar, BarChart3, ClipboardList } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { StatCard } from '@/components/StatCard';
-import { OnCallCard } from '@/components/OnCallCard';
+import { SingleOnCallCard } from '@/components/SingleOnCallCard';
 import { HeroSection } from '@/components/HeroSection';
-import { getCurrentOnCall, getServiceLinesForOffice, getShiftsForOffice } from '@/data/mockData';
+import { getSingleOnCallProvider, getShiftsForOffice } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { format, addDays } from 'date-fns';
@@ -16,8 +16,7 @@ export function OfficeDashboard() {
     return <div>No office selected</div>;
   }
 
-  const currentOnCall = getCurrentOnCall(currentOffice.id);
-  const serviceLines = getServiceLinesForOffice(currentOffice.id);
+  const singleOnCall = getSingleOnCallProvider(currentOffice.id);
   const allShifts = getShiftsForOffice(currentOffice.id);
   const draftShifts = allShifts.filter((s) => s.status === 'draft');
 
@@ -87,36 +86,28 @@ export function OfficeDashboard() {
         </Link>
       </div>
 
-      {/* Who's On Call Now */}
+      {/* Single On-Call Provider */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">Who's On Call Now</h2>
-        {currentOnCall.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {currentOnCall.map((shift) => (
-              <OnCallCard
-                key={shift.id}
-                shift={shift}
-                serviceLine={shift.service_line?.name || 'Unknown'}
-                showEscalation
-              />
-            ))}
-          </div>
+        <h2 className="text-xl font-semibold mb-4">On-Call Provider</h2>
+        {singleOnCall ? (
+          <SingleOnCallCard 
+            provider={singleOnCall.provider}
+            afterHoursStart={singleOnCall.afterHoursStart}
+            afterHoursEnd={singleOnCall.afterHoursEnd}
+          />
         ) : (
           <div className="rounded-xl border border-dashed p-8 text-center">
             <Clock className="mx-auto h-10 w-10 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">No active on-call coverage right now</p>
+            <p className="mt-4 text-muted-foreground">No on-call coverage assigned</p>
+            <Link to="/after-hours">
+              <Button variant="link" className="mt-2">Configure Schedule</Button>
+            </Link>
           </div>
         )}
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Service Lines"
-          value={serviceLines.length}
-          subtitle="Active coverage areas"
-          icon={Calendar}
-        />
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           title="Unpublished Shifts"
           value={draftShifts.length}
@@ -133,65 +124,28 @@ export function OfficeDashboard() {
         />
         <StatCard
           title="On-Call Today"
-          value={currentOnCall.length}
-          subtitle="Active shifts"
+          value={singleOnCall ? 1 : 0}
+          subtitle="Active provider"
           icon={Clock}
         />
-      </div>
-
-      {/* Upcoming Shifts */}
-      <div className="rounded-xl border bg-card">
-        <div className="flex items-center justify-between border-b p-4">
-          <h2 className="text-lg font-semibold">Upcoming Shifts (Next 48h)</h2>
-          <Link to="/calendar">
-            <Button variant="ghost" size="sm" className="gap-1">
-              View Calendar <ChevronRight className="h-4 w-4" />
-            </Button>
-          </Link>
-        </div>
-        {upcomingShifts.length > 0 ? (
-          <div className="divide-y">
-            {upcomingShifts.map((shift) => (
-              <div key={shift.id} className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{format(new Date(shift.start_time), 'd')}</p>
-                    <p className="text-xs text-muted-foreground uppercase">
-                      {format(new Date(shift.start_time), 'MMM')}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">{shift.service_line?.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {shift.primary_provider?.full_name}
-                      {shift.backup_provider && ` + ${shift.backup_provider.full_name}`}
-                    </p>
-                  </div>
-                </div>
-                <Badge variant={shift.status === 'published' ? 'default' : 'secondary'}>
-                  {shift.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-8 text-center text-muted-foreground">
-            No upcoming shifts in the next 48 hours
-          </div>
-        )}
       </div>
 
       {/* Recent Changes */}
       <div className="rounded-xl border bg-card">
         <div className="flex items-center justify-between border-b p-4">
           <h2 className="text-lg font-semibold">Recent Schedule Changes</h2>
+          <Link to="/after-hours">
+            <Button variant="ghost" size="sm" className="gap-1">
+              View Schedule <ChevronRight className="h-4 w-4" />
+            </Button>
+          </Link>
         </div>
         <div className="p-4">
           <div className="space-y-4">
             {[
-              { action: 'Shift published', details: 'General Ophthalmology - Dec 17-18', time: '2 hours ago' },
-              { action: 'Shift updated', details: 'Retina - Backup provider changed', time: '5 hours ago' },
-              { action: 'New shift created', details: 'General Ophthalmology - Dec 20', time: '1 day ago' },
+              { action: 'On-call assigned', details: 'Dr. Restivo - Dec 17-18', time: '2 hours ago' },
+              { action: 'Schedule published', details: 'December on-call rotation', time: '5 hours ago' },
+              { action: 'Provider changed', details: 'Dec 20 - switched to Dr. Shepler', time: '1 day ago' },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 text-sm">
                 <div className="mt-1 h-2 w-2 rounded-full bg-accent" />
