@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, DragEvent } from 'react';
 import { MainLayout } from '@/components/MainLayout';
 import { useApp } from '@/contexts/AppContext';
 import { getShiftsForOffice, getServiceLinesForOffice, mockUsers } from '@/data/mockData';
@@ -22,9 +22,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Clock } from 'lucide-react';
-import { format, startOfWeek, addDays, isSameDay, addWeeks, subWeeks, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from 'date-fns';
+import { Calendar, ChevronLeft, ChevronRight, Plus, GripVertical } from 'lucide-react';
+import { format, startOfWeek, addDays, isSameDay, addWeeks, subWeeks, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { OnCallShift } from '@/types';
 
 const CalendarPage = () => {
   const { currentOffice } = useApp();
@@ -32,16 +34,25 @@ const CalendarPage = () => {
   const [view, setView] = useState<'week' | 'month'>('week');
   const [selectedServiceLine, setSelectedServiceLine] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [shifts, setShifts] = useState<OnCallShift[]>([]);
+  const [draggedShift, setDraggedShift] = useState<OnCallShift | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
 
+  // Initialize shifts from mock data
+  if (!isInitialized) {
+    setShifts(getShiftsForOffice(currentOffice.id));
+    setIsInitialized(true);
+  }
+
   const serviceLines = getServiceLinesForOffice(currentOffice.id);
-  const allShifts = getShiftsForOffice(currentOffice.id);
   const filteredShifts = selectedServiceLine === 'all'
-    ? allShifts
-    : allShifts.filter((s) => s.service_line_id === selectedServiceLine);
+    ? shifts
+    : shifts.filter((s) => s.service_line_id === selectedServiceLine);
 
   // Week view data
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
@@ -61,6 +72,134 @@ const CalendarPage = () => {
 
   const providers = mockUsers.filter((u) => u.email.includes('dr.'));
 
+  // Drag and Drop handlers
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, shift: OnCallShift) => {
+    setDraggedShift(shift);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', shift.id);
+    // Add visual feedback
+    if (e.currentTarget) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  };
+
+  const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
+    setDraggedShift(null);
+    setDragOverDate(null);
+    if (e.currentTarget) {
+      e.currentTarget.style.opacity = '1';
+    }
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, date: Date) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverDate(date);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverDate(null);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>, targetDate: Date) => {
+    e.preventDefault();
+    setDragOverDate(null);
+
+    if (!draggedShift) return;
+
+    const originalDate = new Date(draggedShift.start_time);
+    if (isSameDay(originalDate, targetDate)) {
+      setDraggedShift(null);
+      return;
+    }
+
+    // Calculate the difference in days
+    const daysDiff = differenceInDays(targetDate, originalDate);
+    
+    // Update the shift with new dates
+    const newStartTime = new Date(draggedShift.start_time);
+    newStartTime.setDate(newStartTime.getDate() + daysDiff);
+    
+    const newEndTime = new Date(draggedShift.end_time);
+    newEndTime.setDate(newEndTime.getDate() + daysDiff);
+
+    // Update shifts state
+    setShifts(prevShifts => 
+      prevShifts.map(s => 
+        s.id === draggedShift.id 
+          ? { ...s, start_time: newStartTime.toISOString(), end_time: newEndTime.toISOString() }
+          : s
+      )
+    );
+
+    toast.success('Shift moved', {
+      description: `${draggedShift.service_line?.name} shift moved to ${format(targetDate, 'MMM d, yyyy')}`
+    });
+
+    setDraggedShift(null);
+  };
+
+  // Shift card component for reusability
+  const ShiftCard = ({ shift, compact = false }: { shift: OnCallShift; compact?: boolean }) => (
+    <div
+      draggable
+      onDragStart={(e) => handleDragStart(e, shift)}
+      onDragEnd={handleDragEnd}
+      className={cn(
+        'group cursor-grab active:cursor-grabbing transition-all duration-200',
+        compact ? 'px-1.5 py-0.5 rounded text-[10px]' : 'p-2 rounded-lg text-xs',
+        shift.status === 'published'
+          ? compact 
+            ? 'bg-primary/10 text-primary hover:bg-primary/20' 
+            : 'bg-primary/10 border border-primary/20 hover:bg-primary/20 hover:shadow-md'
+          : compact
+            ? 'bg-warning/10 text-warning hover:bg-warning/20'
+            : 'bg-warning/10 border border-warning/20 hover:bg-warning/20 hover:shadow-md',
+        draggedShift?.id === shift.id && 'opacity-50 scale-95'
+      )}
+    >
+      {compact ? (
+        <span className="truncate flex items-center gap-1">
+          <GripVertical className="h-2 w-2 opacity-0 group-hover:opacity-50 flex-shrink-0" />
+          {shift.service_line?.name}
+        </span>
+      ) : (
+        <>
+          <div className="flex items-start gap-1">
+            <GripVertical className="h-3 w-3 mt-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{shift.service_line?.name}</p>
+              <p className="text-muted-foreground truncate mt-1">
+                {shift.primary_provider?.full_name?.split(' ')[0]}
+              </p>
+            </div>
+          </div>
+          <Badge
+            variant={shift.status === 'published' ? 'default' : 'secondary'}
+            className="mt-1 text-[10px] px-1"
+          >
+            {shift.status}
+          </Badge>
+        </>
+      )}
+    </div>
+  );
+
+  // Day cell component for drop target
+  const DayCell = ({ day, children, className }: { day: Date; children: React.ReactNode; className?: string }) => (
+    <div
+      onDragOver={(e) => handleDragOver(e, day)}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => handleDrop(e, day)}
+      className={cn(
+        className,
+        dragOverDate && isSameDay(dragOverDate, day) && 'ring-2 ring-primary ring-inset bg-primary/10'
+      )}
+    >
+      {children}
+    </div>
+  );
+
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
@@ -68,7 +207,7 @@ const CalendarPage = () => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">On-Call Calendar</h1>
-            <p className="text-muted-foreground mt-1">Manage on-call shifts and coverage</p>
+            <p className="text-muted-foreground mt-1">Drag and drop shifts to reschedule</p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -196,30 +335,14 @@ const CalendarPage = () => {
                       isSameDay(day, new Date()) && 'text-primary'
                     )}>{format(day, 'd')}</p>
                   </div>
-                  <div className="min-h-[200px] p-2 space-y-2">
+                  <DayCell 
+                    day={day}
+                    className="min-h-[200px] p-2 space-y-2 transition-colors"
+                  >
                     {getShiftsForDay(day).map((shift) => (
-                      <div
-                        key={shift.id}
-                        className={cn(
-                          'p-2 rounded-lg text-xs cursor-pointer transition-colors',
-                          shift.status === 'published'
-                            ? 'bg-primary/10 border border-primary/20 hover:bg-primary/20'
-                            : 'bg-warning/10 border border-warning/20 hover:bg-warning/20'
-                        )}
-                      >
-                        <p className="font-medium truncate">{shift.service_line?.name}</p>
-                        <p className="text-muted-foreground truncate mt-1">
-                          {shift.primary_provider?.full_name?.split(' ')[0]}
-                        </p>
-                        <Badge
-                          variant={shift.status === 'published' ? 'default' : 'secondary'}
-                          className="mt-1 text-[10px] px-1"
-                        >
-                          {shift.status}
-                        </Badge>
-                      </div>
+                      <ShiftCard key={shift.id} shift={shift} />
                     ))}
-                  </div>
+                  </DayCell>
                 </div>
               ))}
             </div>
@@ -237,10 +360,11 @@ const CalendarPage = () => {
                 {monthDays.map((day, i) => {
                   const dayShifts = getShiftsForDay(day);
                   return (
-                    <div
+                    <DayCell
                       key={i}
+                      day={day}
                       className={cn(
-                        'min-h-[100px] border-b border-r p-2',
+                        'min-h-[100px] border-b border-r p-2 transition-colors',
                         !isSameMonth(day, currentDate) && 'bg-muted/30',
                         isSameDay(day, new Date()) && 'bg-primary/5'
                       )}
@@ -254,21 +378,13 @@ const CalendarPage = () => {
                       </p>
                       <div className="mt-1 space-y-1">
                         {dayShifts.slice(0, 2).map((shift) => (
-                          <div
-                            key={shift.id}
-                            className={cn(
-                              'px-1.5 py-0.5 rounded text-[10px] truncate',
-                              shift.status === 'published' ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning'
-                            )}
-                          >
-                            {shift.service_line?.name}
-                          </div>
+                          <ShiftCard key={shift.id} shift={shift} compact />
                         ))}
                         {dayShifts.length > 2 && (
                           <p className="text-[10px] text-muted-foreground">+{dayShifts.length - 2} more</p>
                         )}
                       </div>
-                    </div>
+                    </DayCell>
                   );
                 })}
               </div>
