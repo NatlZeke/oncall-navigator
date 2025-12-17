@@ -190,6 +190,110 @@ export type Database = {
         }
         Relationships: []
       }
+      oncall_assignments: {
+        Row: {
+          after_hours_end: string
+          after_hours_start: string
+          assignment_date: string
+          created_at: string
+          id: string
+          office_id: string
+          provider_name: string
+          provider_phone: string
+          provider_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          after_hours_end?: string
+          after_hours_start?: string
+          assignment_date: string
+          created_at?: string
+          id?: string
+          office_id: string
+          provider_name: string
+          provider_phone: string
+          provider_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          after_hours_end?: string
+          after_hours_start?: string
+          assignment_date?: string
+          created_at?: string
+          id?: string
+          office_id?: string
+          provider_name?: string
+          provider_phone?: string
+          provider_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      oncall_swap_requests: {
+        Row: {
+          created_at: string
+          id: string
+          office_id: string
+          original_assignment_id: string
+          reason: string | null
+          requesting_user_id: string
+          requesting_user_name: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          reviewer_notes: string | null
+          status: string
+          swap_date: string
+          target_user_id: string | null
+          target_user_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          office_id: string
+          original_assignment_id: string
+          reason?: string | null
+          requesting_user_id: string
+          requesting_user_name: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          swap_date: string
+          target_user_id?: string | null
+          target_user_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          office_id?: string
+          original_assignment_id?: string
+          reason?: string | null
+          requesting_user_id?: string
+          requesting_user_name?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          swap_date?: string
+          target_user_id?: string | null
+          target_user_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oncall_swap_requests_original_assignment_id_fkey"
+            columns: ["original_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "oncall_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       policy_attestations: {
         Row: {
           accepted_at: string

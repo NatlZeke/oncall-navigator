@@ -458,8 +458,9 @@ export function getCurrentOnCall(officeId: string) {
 }
 
 // Single on-call provider per office (new simplified model)
+// This is a fallback - prefer fetching from database
 export function getSingleOnCallProvider(officeId: string): { provider: User; afterHoursStart: string; afterHoursEnd: string } | null {
-  // Mock data: one provider on-call per office
+  // Mock data fallback: one provider on-call per office
   const onCallAssignments: Record<string, { userId: string; afterHoursStart: string; afterHoursEnd: string }> = {
     'office-1': { userId: 'user-1', afterHoursStart: '17:00', afterHoursEnd: '08:00' },
     'office-2': { userId: 'user-4', afterHoursStart: '17:00', afterHoursEnd: '08:00' },
