@@ -91,6 +91,89 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_alert_configs: {
+        Row: {
+          alert_type: string
+          check_interval_hours: number
+          created_at: string
+          enabled: boolean
+          id: string
+          notify_email: string[] | null
+          notify_phone: string[] | null
+          office_id: string
+          threshold_percent: number
+          updated_at: string
+        }
+        Insert: {
+          alert_type?: string
+          check_interval_hours?: number
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          notify_email?: string[] | null
+          notify_phone?: string[] | null
+          office_id: string
+          threshold_percent?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_type?: string
+          check_interval_hours?: number
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          notify_email?: string[] | null
+          notify_phone?: string[] | null
+          office_id?: string
+          threshold_percent?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      compliance_alerts: {
+        Row: {
+          alert_type: string
+          config_id: string | null
+          created_at: string
+          current_value: number
+          id: string
+          message: string
+          notifications_sent: Json | null
+          office_id: string
+          threshold_value: number
+        }
+        Insert: {
+          alert_type: string
+          config_id?: string | null
+          created_at?: string
+          current_value: number
+          id?: string
+          message: string
+          notifications_sent?: Json | null
+          office_id: string
+          threshold_value: number
+        }
+        Update: {
+          alert_type?: string
+          config_id?: string | null
+          created_at?: string
+          current_value?: number
+          id?: string
+          message?: string
+          notifications_sent?: Json | null
+          office_id?: string
+          threshold_value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_alerts_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_alert_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       escalation_events: {
         Row: {
           created_at: string

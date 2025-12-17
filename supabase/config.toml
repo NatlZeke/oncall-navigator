@@ -14,3 +14,6 @@ verify_jwt = true
 
 [functions.ai-conversation]
 verify_jwt = true
+
+[functions.compliance-monitor]
+verify_jwt = true
