@@ -26,6 +26,8 @@ import CompliancePage from "./pages/CompliancePage";
 import TwilioSettingsPage from "./pages/TwilioSettingsPage";
 import AfterHoursSchedulePage from "./pages/AfterHoursSchedulePage";
 import CallLogsPage from "./pages/CallLogsPage";
+import SLADashboardPage from "./pages/SLADashboardPage";
+import ComplianceCenterPage from "./pages/ComplianceCenterPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -60,6 +62,8 @@ const App = () => (
             <Route path="/twilio" element={<TwilioSettingsPage />} />
             <Route path="/after-hours" element={<AfterHoursSchedulePage />} />
             <Route path="/call-logs" element={<CallLogsPage />} />
+            <Route path="/sla-dashboard" element={<SLADashboardPage />} />
+            <Route path="/compliance-center" element={<ComplianceCenterPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

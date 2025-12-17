@@ -14,6 +14,143 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_review_items: {
+        Row: {
+          access_review_id: string
+          created_at: string
+          id: string
+          last_login_at: string | null
+          reviewer_notes: string | null
+          role_summary: Json
+          status: Database["public"]["Enums"]["review_item_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_review_id: string
+          created_at?: string
+          id?: string
+          last_login_at?: string | null
+          reviewer_notes?: string | null
+          role_summary?: Json
+          status?: Database["public"]["Enums"]["review_item_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_review_id?: string
+          created_at?: string
+          id?: string
+          last_login_at?: string | null
+          reviewer_notes?: string | null
+          role_summary?: Json
+          status?: Database["public"]["Enums"]["review_item_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_review_items_access_review_id_fkey"
+            columns: ["access_review_id"]
+            isOneToOne: false
+            referencedRelation: "access_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      access_reviews: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by_user_id: string
+          id: string
+          published_at: string | null
+          review_period_end: string
+          review_period_start: string
+          status: Database["public"]["Enums"]["review_status"]
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by_user_id: string
+          id?: string
+          published_at?: string | null
+          review_period_end: string
+          review_period_start: string
+          status?: Database["public"]["Enums"]["review_status"]
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by_user_id?: string
+          id?: string
+          published_at?: string | null
+          review_period_end?: string
+          review_period_start?: string
+          status?: Database["public"]["Enums"]["review_status"]
+        }
+        Relationships: []
+      }
+      escalation_events: {
+        Row: {
+          created_at: string
+          escalation_id: string
+          event_time: string
+          event_type: Database["public"]["Enums"]["escalation_event_type"]
+          id: string
+          payload: Json | null
+        }
+        Insert: {
+          created_at?: string
+          escalation_id: string
+          event_time?: string
+          event_type: Database["public"]["Enums"]["escalation_event_type"]
+          id?: string
+          payload?: Json | null
+        }
+        Update: {
+          created_at?: string
+          escalation_id?: string
+          event_time?: string
+          event_type?: Database["public"]["Enums"]["escalation_event_type"]
+          id?: string
+          payload?: Json | null
+        }
+        Relationships: []
+      }
+      evidence_exports: {
+        Row: {
+          company_id: string
+          created_at: string
+          file_url: string | null
+          id: string
+          parameters: Json
+          requested_by_user_id: string
+          status: string
+          type: Database["public"]["Enums"]["evidence_type"]
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          parameters?: Json
+          requested_by_user_id: string
+          status?: string
+          type: Database["public"]["Enums"]["evidence_type"]
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          parameters?: Json
+          requested_by_user_id?: string
+          status?: string
+          type?: Database["public"]["Enums"]["evidence_type"]
+        }
+        Relationships: []
+      }
       notification_logs: {
         Row: {
           content: Json | null
@@ -50,6 +187,144 @@ export type Database = {
           recipient_user_id?: string | null
           status?: string
           twilio_sid?: string | null
+        }
+        Relationships: []
+      }
+      policy_attestations: {
+        Row: {
+          accepted_at: string
+          company_id: string
+          created_at: string
+          id: string
+          ip_address: string | null
+          policy_type: string
+          policy_version: string
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          policy_type: string
+          policy_version: string
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          policy_type?: string
+          policy_version?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      provider_acknowledgements: {
+        Row: {
+          ack_time: string
+          ack_type: Database["public"]["Enums"]["ack_type"]
+          created_at: string
+          escalation_id: string
+          id: string
+          notes: string | null
+          office_id: string
+          user_id: string
+        }
+        Insert: {
+          ack_time?: string
+          ack_type: Database["public"]["Enums"]["ack_type"]
+          created_at?: string
+          escalation_id: string
+          id?: string
+          notes?: string | null
+          office_id: string
+          user_id: string
+        }
+        Update: {
+          ack_time?: string
+          ack_type?: Database["public"]["Enums"]["ack_type"]
+          created_at?: string
+          escalation_id?: string
+          id?: string
+          notes?: string | null
+          office_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sla_policies: {
+        Row: {
+          breach_minutes: number
+          created_at: string
+          id: string
+          office_id: string
+          service_line_id: string | null
+          severity: string
+          target_minutes: number
+          updated_at: string
+          warning_minutes: number
+        }
+        Insert: {
+          breach_minutes?: number
+          created_at?: string
+          id?: string
+          office_id: string
+          service_line_id?: string | null
+          severity: string
+          target_minutes?: number
+          updated_at?: string
+          warning_minutes?: number
+        }
+        Update: {
+          breach_minutes?: number
+          created_at?: string
+          id?: string
+          office_id?: string
+          service_line_id?: string | null
+          severity?: string
+          target_minutes?: number
+          updated_at?: string
+          warning_minutes?: number
+        }
+        Relationships: []
+      }
+      sla_results: {
+        Row: {
+          computed_at: string
+          escalation_id: string
+          id: string
+          office_id: string
+          service_line_id: string | null
+          severity: string
+          status: Database["public"]["Enums"]["sla_status"]
+          time_to_ack_minutes: number | null
+          time_to_resolution_minutes: number | null
+        }
+        Insert: {
+          computed_at?: string
+          escalation_id: string
+          id?: string
+          office_id: string
+          service_line_id?: string | null
+          severity: string
+          status?: Database["public"]["Enums"]["sla_status"]
+          time_to_ack_minutes?: number | null
+          time_to_resolution_minutes?: number | null
+        }
+        Update: {
+          computed_at?: string
+          escalation_id?: string
+          id?: string
+          office_id?: string
+          service_line_id?: string | null
+          severity?: string
+          status?: Database["public"]["Enums"]["sla_status"]
+          time_to_ack_minutes?: number | null
+          time_to_resolution_minutes?: number | null
         }
         Relationships: []
       }
@@ -100,7 +375,29 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      ack_type:
+        | "received"
+        | "called_patient"
+        | "advised_er"
+        | "resolved"
+        | "handed_off"
+      escalation_event_type:
+        | "initiated"
+        | "notified_tier1"
+        | "notified_tier1_reminder"
+        | "escalated_tier2"
+        | "escalated_tier3"
+        | "acknowledged"
+        | "resolved"
+        | "canceled"
+      evidence_type:
+        | "audit_logs"
+        | "access_review"
+        | "policy_attestations"
+        | "escalation_sla_report"
+      review_item_status: "retain" | "revoke" | "modify"
+      review_status: "draft" | "published"
+      sla_status: "met" | "warn" | "breached"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -227,6 +524,33 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ack_type: [
+        "received",
+        "called_patient",
+        "advised_er",
+        "resolved",
+        "handed_off",
+      ],
+      escalation_event_type: [
+        "initiated",
+        "notified_tier1",
+        "notified_tier1_reminder",
+        "escalated_tier2",
+        "escalated_tier3",
+        "acknowledged",
+        "resolved",
+        "canceled",
+      ],
+      evidence_type: [
+        "audit_logs",
+        "access_review",
+        "policy_attestations",
+        "escalation_sla_report",
+      ],
+      review_item_status: ["retain", "revoke", "modify"],
+      review_status: ["draft", "published"],
+      sla_status: ["met", "warn", "breached"],
+    },
   },
 } as const
