@@ -32,6 +32,8 @@ import { IncidentEscalation, EscalationSeverity } from '@/types';
 import { ProviderAcknowledgePanel } from '@/components/ProviderAcknowledgePanel';
 import { EscalationTimeline } from '@/components/EscalationTimeline';
 import { mockEscalationEvents } from '@/data/phase4MockData';
+import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
+import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
 import type { AckType } from '@/types/phase4';
 
 const severityColors: Record<EscalationSeverity, string> = {
@@ -321,6 +323,7 @@ const EscalationManagementPage = () => {
               )}
             </TabsTrigger>
             <TabsTrigger value="resolved">Resolved</TabsTrigger>
+            <TabsTrigger value="protocol">Protocol</TabsTrigger>
           </TabsList>
 
           <TabsContent value="active" className="mt-4 space-y-4">
@@ -363,6 +366,11 @@ const EscalationManagementPage = () => {
                 <EscalationCard key={escalation.id} escalation={escalation} />
               ))
             )}
+          </TabsContent>
+
+          <TabsContent value="protocol" className="mt-4 space-y-4">
+            <SummaryBeforeCallRule />
+            <AIIntakeScopeDeclaration />
           </TabsContent>
         </Tabs>
 

@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Eye,
   FileText,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 import { format, isWeekend } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,8 @@ import { CallFlowVisualization, EscalationStatusIndicators } from '@/components/
 import { DemoMode } from '@/components/DemoMode';
 import { TriageFlowChart } from '@/components/TriageFlowChart';
 import { RealtimeCallLog } from '@/components/RealtimeCallLog';
+import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
+import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
 
 // Mock single on-call per office (matching webhook data)
 const mockOnCallByOffice: Record<string, { providerId: string; afterHoursStart: string; afterHoursEnd: string }> = {
@@ -285,23 +288,38 @@ const OperatorView = () => {
 
           {/* Protocol Tab */}
           <TabsContent value="protocol" className="space-y-4">
+            {/* Summary Before Call - NON-NEGOTIABLE */}
+            <SummaryBeforeCallRule compact />
+            
+            {/* AI Scope Declaration */}
+            <AIIntakeScopeDeclaration />
+            
+            {/* Triage Flow */}
             <TriageFlowChart />
             <OphthalmologyTriageInfo />
             <CallFlowVisualization />
             
-            {/* Safety Message Notice */}
-            <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+            {/* Safety Message Notice - Enhanced */}
+            <div className="p-4 rounded-lg bg-warning/10 border-2 border-warning/30">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                <AlertTriangle className="h-6 w-6 text-warning shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-sm">Safety-Net Message (Always Delivered)</p>
-                  <p className="text-sm text-muted-foreground mt-1 italic">
-                    "If symptoms worsen, or there is sudden vision loss, severe pain, or a curtain 
-                    in vision, go immediately to the nearest emergency room."
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="font-bold text-sm">Safety-Net Message</p>
+                    <Badge variant="outline" className="text-[10px] bg-warning/10 text-warning border-warning/30">
+                      ALWAYS DELIVERED
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground italic border-l-2 border-warning/30 pl-3">
+                    "If your symptoms worsen, or you experience sudden vision loss, severe pain, or a 
+                    curtain in your vision, please go immediately to the nearest emergency room."
                   </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ✓ Delivery of this message is logged for compliance.
-                  </p>
+                  <div className="mt-3 p-2 rounded bg-background/50 border">
+                    <p className="text-xs text-muted-foreground">
+                      <strong>Compliance:</strong> Delivery of this safety message is logged and timestamped 
+                      for every clinical call interaction, regardless of outcome.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

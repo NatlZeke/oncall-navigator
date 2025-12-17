@@ -54,13 +54,22 @@ const benefits = [
   {
     icon: Shield,
     title: 'No Blind Call-Ins',
-    description: 'On-call physicians are never connected until a structured summary is delivered.'
+    description: 'On-call physicians are NEVER connected until a structured summary is delivered first.'
   },
   {
     icon: CheckCircle,
     title: 'Urgent Eye Emergencies Reach Doctors Faster',
     description: 'True emergencies like sudden vision loss are identified immediately with full context.'
   }
+];
+
+const summaryContents = [
+  'Established patient status',
+  'Post-op status',
+  'Chief complaint (plain language)',
+  'Severity & onset',
+  'Triage level',
+  'Callback number'
 ];
 
 interface CallFlowVisualizationProps {
@@ -74,7 +83,7 @@ export function CallFlowVisualization({ showBenefits = true, compact = false }: 
       <CardHeader className={compact ? 'pb-2' : ''}>
         <CardTitle className="text-lg">How Calls Are Handled</CardTitle>
         <CardDescription>
-          No on-call doctor is contacted until a structured summary is delivered.
+          <strong>Non-negotiable rule:</strong> No on-call doctor is contacted until a structured summary is delivered.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -100,15 +109,31 @@ export function CallFlowVisualization({ showBenefits = true, compact = false }: 
           ))}
         </div>
 
-        {/* Summary Required Notice */}
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
-          <MessageSquare className="h-5 w-5 text-success shrink-0" />
-          <div className="text-sm">
-            <p className="font-medium text-success">Summary-Before-Call is Mandatory</p>
-            <p className="text-muted-foreground text-xs">
-              Every escalation generates a standardized summary including: patient status, 
-              post-op status, chief complaint, severity, triage level, and callback number.
-            </p>
+        {/* Summary Required Notice - Enhanced */}
+        <div className="p-4 rounded-lg bg-success/10 border-2 border-success/30">
+          <div className="flex items-start gap-3">
+            <MessageSquare className="h-5 w-5 text-success shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <p className="font-bold text-success">Summary-Before-Call is MANDATORY</p>
+                <Badge variant="outline" className="text-[10px] bg-success/10 text-success border-success/30">
+                  NON-NEGOTIABLE
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Physicians receive a structured summary via SMS BEFORE any patient call is connected.
+                This is an absolute, system-enforced rule with no exceptions.
+              </p>
+              {!compact && (
+                <div className="flex flex-wrap gap-1.5">
+                  {summaryContents.map((item) => (
+                    <Badge key={item} variant="secondary" className="text-[10px] font-normal">
+                      {item}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
