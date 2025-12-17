@@ -1,10 +1,18 @@
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import {
   LayoutDashboard,
   Calendar,
@@ -30,6 +38,7 @@ import {
   ClipboardList,
   BarChart3,
   ShieldAlert,
+  Home,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -95,6 +104,11 @@ export function MainLayout({ children }: { children: ReactNode }) {
   ];
 
   const navItems = isCompanyLevel ? companyNavItems : officeNavItems;
+
+  const currentPageLabel = useMemo(() => {
+    const currentItem = navItems.find((item) => item.to === location.pathname);
+    return currentItem?.label || 'Page';
+  }, [navItems, location.pathname]);
 
   const initials = currentUser?.full_name
     ?.split(' ')
@@ -175,7 +189,30 @@ export function MainLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6">
+          {/* Breadcrumbs */}
+          <Breadcrumb className="mb-6">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link to="/" className="flex items-center gap-1.5">
+                    <Home className="h-3.5 w-3.5" />
+                    {isCompanyLevel ? 'Company' : 'Office'}
+                  </Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              {location.pathname !== '/' && (
+                <>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{currentPageLabel}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
+              )}
+            </BreadcrumbList>
+          </Breadcrumb>
+          {children}
+        </main>
       </div>
     </div>
   );
