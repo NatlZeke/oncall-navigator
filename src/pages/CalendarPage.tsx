@@ -1,10 +1,10 @@
 import { useState, DragEvent } from 'react';
 import { MainLayout } from '@/components/MainLayout';
 import { useApp } from '@/contexts/AppContext';
-import { getShiftsForOffice, getServiceLinesForOffice, mockUsers } from '@/data/mockData';
+import { mockUsers } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -22,62 +22,92 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Calendar, ChevronLeft, ChevronRight, Plus, GripVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, GripVertical, Moon, Sun } from 'lucide-react';
 import { format, startOfWeek, addDays, isSameDay, addWeeks, subWeeks, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { OnCallShift } from '@/types';
+
+// After-hours shift type (evening to morning)
+interface AfterHoursShift {
+  id: string;
+  office_id: string;
+  date: string; // The date the shift starts (evening)
+  provider_user_id: string;
+  provider?: { id: string; full_name: string; phone_mobile: string };
+  status: 'draft' | 'published';
+  start_time: string; // e.g., "17:00" (5 PM)
+  end_time: string; // e.g., "08:00" (8 AM next day)
+}
+
+// Generate after-hours shifts for demo
+const generateAfterHoursShifts = (officeId: string): AfterHoursShift[] => {
+  const providers = mockUsers.filter((u) => u.email.includes('dr.'));
+  const now = new Date();
+  const shifts: AfterHoursShift[] = [];
+  
+  // Generate shifts for 2 weeks
+  for (let i = -3; i < 14; i++) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    const providerIndex = (i + 3) % providers.length;
+    shifts.push({
+      id: `after-hours-${officeId}-${i}`,
+      office_id: officeId,
+      date: date.toISOString().split('T')[0],
+      provider_user_id: providers[providerIndex].id,
+      provider: providers[providerIndex],
+      status: i < 7 ? 'published' : 'draft',
+      start_time: '17:00',
+      end_time: '08:00',
+    });
+  }
+  
+  return shifts;
+};
 
 const CalendarPage = () => {
   const { currentOffice } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'week' | 'month'>('week');
-  const [selectedServiceLine, setSelectedServiceLine] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [shifts, setShifts] = useState<OnCallShift[]>([]);
-  const [draggedShift, setDraggedShift] = useState<OnCallShift | null>(null);
+  const [shifts, setShifts] = useState<AfterHoursShift[]>([]);
+  const [draggedShift, setDraggedShift] = useState<AfterHoursShift | null>(null);
   const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [newShiftDate, setNewShiftDate] = useState('');
+  const [newShiftProvider, setNewShiftProvider] = useState('');
 
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
 
-  // Initialize shifts from mock data
+  // Initialize shifts
   if (!isInitialized) {
-    setShifts(getShiftsForOffice(currentOffice.id));
+    setShifts(generateAfterHoursShifts(currentOffice.id));
     setIsInitialized(true);
   }
-
-  const serviceLines = getServiceLinesForOffice(currentOffice.id);
-  const filteredShifts = selectedServiceLine === 'all'
-    ? shifts
-    : shifts.filter((s) => s.service_line_id === selectedServiceLine);
 
   // Week view data
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   // Month view data
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
-  const monthDays = eachDayOfInterval({ start: startOfWeek(monthStart), end: addDays(endOfMonth(currentDate), 6 - endOfMonth(currentDate).getDay()) });
+  const monthDays = eachDayOfInterval({ 
+    start: startOfWeek(startOfMonth(currentDate)), 
+    end: addDays(endOfMonth(currentDate), 6 - endOfMonth(currentDate).getDay()) 
+  });
 
-  const getShiftsForDay = (date: Date) => {
-    return filteredShifts.filter((shift) => {
-      const shiftStart = new Date(shift.start_time);
-      return isSameDay(shiftStart, date);
-    });
+  const getShiftForDay = (date: Date): AfterHoursShift | undefined => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return shifts.find((shift) => shift.date === dateStr);
   };
 
   const providers = mockUsers.filter((u) => u.email.includes('dr.'));
 
   // Drag and Drop handlers
-  const handleDragStart = (e: DragEvent<HTMLDivElement>, shift: OnCallShift) => {
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, shift: AfterHoursShift) => {
     setDraggedShift(shift);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', shift.id);
-    // Add visual feedback
     if (e.currentTarget) {
       e.currentTarget.style.opacity = '0.5';
     }
@@ -107,47 +137,83 @@ const CalendarPage = () => {
 
     if (!draggedShift) return;
 
-    const originalDate = new Date(draggedShift.start_time);
+    const originalDate = new Date(draggedShift.date);
     if (isSameDay(originalDate, targetDate)) {
       setDraggedShift(null);
       return;
     }
 
-    // Calculate the difference in days
-    const daysDiff = differenceInDays(targetDate, originalDate);
-    
-    // Update the shift with new dates
-    const newStartTime = new Date(draggedShift.start_time);
-    newStartTime.setDate(newStartTime.getDate() + daysDiff);
-    
-    const newEndTime = new Date(draggedShift.end_time);
-    newEndTime.setDate(newEndTime.getDate() + daysDiff);
-
-    // Update shifts state
-    setShifts(prevShifts => 
-      prevShifts.map(s => 
-        s.id === draggedShift.id 
-          ? { ...s, start_time: newStartTime.toISOString(), end_time: newEndTime.toISOString() }
-          : s
-      )
-    );
-
-    toast.success('Shift moved', {
-      description: `${draggedShift.service_line?.name} shift moved to ${format(targetDate, 'MMM d, yyyy')}`
-    });
+    // Check if target date already has a shift
+    const existingShift = getShiftForDay(targetDate);
+    if (existingShift) {
+      // Swap the providers
+      setShifts(prevShifts => 
+        prevShifts.map(s => {
+          if (s.id === draggedShift.id) {
+            return { ...s, date: format(targetDate, 'yyyy-MM-dd') };
+          }
+          if (s.id === existingShift.id) {
+            return { ...s, date: draggedShift.date };
+          }
+          return s;
+        })
+      );
+      toast.success('Shifts swapped', {
+        description: `${draggedShift.provider?.full_name} and ${existingShift.provider?.full_name} swapped`
+      });
+    } else {
+      // Move to empty slot
+      setShifts(prevShifts => 
+        prevShifts.map(s => 
+          s.id === draggedShift.id 
+            ? { ...s, date: format(targetDate, 'yyyy-MM-dd') }
+            : s
+        )
+      );
+      toast.success('Shift moved', {
+        description: `${draggedShift.provider?.full_name} moved to ${format(targetDate, 'MMM d')}`
+      });
+    }
 
     setDraggedShift(null);
   };
 
-  // Shift card component for reusability
-  const ShiftCard = ({ shift, compact = false }: { shift: OnCallShift; compact?: boolean }) => (
+  const handleCreateShift = () => {
+    if (!newShiftDate || !newShiftProvider) {
+      toast.error('Please select both date and provider');
+      return;
+    }
+
+    const provider = providers.find(p => p.id === newShiftProvider);
+    const newShift: AfterHoursShift = {
+      id: `after-hours-new-${Date.now()}`,
+      office_id: currentOffice.id,
+      date: newShiftDate,
+      provider_user_id: newShiftProvider,
+      provider: provider,
+      status: 'draft',
+      start_time: '17:00',
+      end_time: '08:00',
+    };
+
+    setShifts(prev => [...prev, newShift]);
+    setIsDialogOpen(false);
+    setNewShiftDate('');
+    setNewShiftProvider('');
+    toast.success('Shift created', {
+      description: `${provider?.full_name} assigned to ${format(new Date(newShiftDate), 'MMM d, yyyy')}`
+    });
+  };
+
+  // Shift card component
+  const ShiftCard = ({ shift, compact = false }: { shift: AfterHoursShift; compact?: boolean }) => (
     <div
       draggable
       onDragStart={(e) => handleDragStart(e, shift)}
       onDragEnd={handleDragEnd}
       className={cn(
         'group cursor-grab active:cursor-grabbing transition-all duration-200',
-        compact ? 'px-1.5 py-0.5 rounded text-[10px]' : 'p-2 rounded-lg text-xs',
+        compact ? 'px-1.5 py-0.5 rounded text-[10px]' : 'p-3 rounded-lg text-sm',
         shift.status === 'published'
           ? compact 
             ? 'bg-primary/10 text-primary hover:bg-primary/20' 
@@ -161,22 +227,24 @@ const CalendarPage = () => {
       {compact ? (
         <span className="truncate flex items-center gap-1">
           <GripVertical className="h-2 w-2 opacity-0 group-hover:opacity-50 flex-shrink-0" />
-          {shift.service_line?.name}
+          <span className="truncate">{shift.provider?.full_name?.split(',')[0]}</span>
         </span>
       ) : (
         <>
-          <div className="flex items-start gap-1">
-            <GripVertical className="h-3 w-3 mt-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+          <div className="flex items-start gap-2">
+            <GripVertical className="h-4 w-4 mt-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">{shift.service_line?.name}</p>
-              <p className="text-muted-foreground truncate mt-1">
-                {shift.primary_provider?.full_name?.split(' ')[0]}
-              </p>
+              <div className="flex items-center gap-2 mb-1">
+                <Moon className="h-3.5 w-3.5 text-primary" />
+                <Sun className="h-3.5 w-3.5 text-warning" />
+                <span className="text-xs text-muted-foreground">5pm – 8am</span>
+              </div>
+              <p className="font-medium truncate">{shift.provider?.full_name}</p>
             </div>
           </div>
           <Badge
             variant={shift.status === 'published' ? 'default' : 'secondary'}
-            className="mt-1 text-[10px] px-1"
+            className="mt-2 text-[10px] px-1.5"
           >
             {shift.status}
           </Badge>
@@ -206,38 +274,38 @@ const CalendarPage = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">On-Call Calendar</h1>
-            <p className="text-muted-foreground mt-1">Drag and drop shifts to reschedule</p>
+            <h1 className="text-3xl font-bold tracking-tight">After-Hours On-Call</h1>
+            <p className="text-muted-foreground mt-1">
+              {currentOffice.name} • Evening 5pm to Morning 8am coverage
+            </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
-                New Shift
+                Assign Coverage
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Create New Shift</DialogTitle>
-                <DialogDescription>Add a new on-call shift to the schedule.</DialogDescription>
+                <DialogTitle>Assign After-Hours Coverage</DialogTitle>
+                <DialogDescription>
+                  Assign a provider for after-hours on-call (5pm – 8am).
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Service Line</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select service line" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {serviceLines.map((sl) => (
-                        <SelectItem key={sl.id} value={sl.id}>{sl.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Date</Label>
+                  <input 
+                    type="date" 
+                    value={newShiftDate}
+                    onChange={(e) => setNewShiftDate(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Primary Provider</Label>
-                  <Select>
+                  <Label>On-Call Provider</Label>
+                  <Select value={newShiftProvider} onValueChange={setNewShiftProvider}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
@@ -248,39 +316,24 @@ const CalendarPage = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Backup Provider</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select backup (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providers.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Start Date</Label>
-                    <input type="date" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Moon className="h-4 w-4" />
+                    <Sun className="h-4 w-4" />
+                    <span className="font-medium">Coverage Hours</span>
                   </div>
-                  <div className="space-y-2">
-                    <Label>End Date</Label>
-                    <input type="date" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-                  </div>
+                  <p>5:00 PM to 8:00 AM (next day)</p>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => setIsDialogOpen(false)}>Create Shift</Button>
+                <Button onClick={handleCreateShift}>Assign Provider</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
 
-        {/* Filters and Navigation */}
+        {/* Navigation */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={() => view === 'week' ? setCurrentDate(subWeeks(currentDate, 1)) : setCurrentDate(subWeeks(currentDate, 4))}>
@@ -297,25 +350,12 @@ const CalendarPage = () => {
               }
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            <Select value={selectedServiceLine} onValueChange={setSelectedServiceLine}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All Service Lines" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Service Lines</SelectItem>
-                {serviceLines.map((sl) => (
-                  <SelectItem key={sl.id} value={sl.id}>{sl.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Tabs value={view} onValueChange={(v) => setView(v as 'week' | 'month')}>
-              <TabsList>
-                <TabsTrigger value="week">Week</TabsTrigger>
-                <TabsTrigger value="month">Month</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <Tabs value={view} onValueChange={(v) => setView(v as 'week' | 'month')}>
+            <TabsList>
+              <TabsTrigger value="week">Week</TabsTrigger>
+              <TabsTrigger value="month">Month</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Calendar Grid */}
@@ -323,28 +363,35 @@ const CalendarPage = () => {
           {view === 'week' ? (
             // Week View
             <div className="grid grid-cols-7">
-              {weekDays.map((day, i) => (
-                <div key={i} className="border-r last:border-r-0">
-                  <div className={cn(
-                    'p-3 text-center border-b',
-                    isSameDay(day, new Date()) && 'bg-primary/5'
-                  )}>
-                    <p className="text-xs text-muted-foreground uppercase">{format(day, 'EEE')}</p>
-                    <p className={cn(
-                      'text-lg font-semibold mt-1',
-                      isSameDay(day, new Date()) && 'text-primary'
-                    )}>{format(day, 'd')}</p>
+              {weekDays.map((day, i) => {
+                const shift = getShiftForDay(day);
+                return (
+                  <div key={i} className="border-r last:border-r-0">
+                    <div className={cn(
+                      'p-3 text-center border-b',
+                      isSameDay(day, new Date()) && 'bg-primary/5'
+                    )}>
+                      <p className="text-xs text-muted-foreground uppercase">{format(day, 'EEE')}</p>
+                      <p className={cn(
+                        'text-lg font-semibold mt-1',
+                        isSameDay(day, new Date()) && 'text-primary'
+                      )}>{format(day, 'd')}</p>
+                    </div>
+                    <DayCell 
+                      day={day}
+                      className="min-h-[180px] p-2 transition-colors"
+                    >
+                      {shift ? (
+                        <ShiftCard shift={shift} />
+                      ) : (
+                        <div className="h-full flex items-center justify-center">
+                          <span className="text-xs text-muted-foreground">No coverage</span>
+                        </div>
+                      )}
+                    </DayCell>
                   </div>
-                  <DayCell 
-                    day={day}
-                    className="min-h-[200px] p-2 space-y-2 transition-colors"
-                  >
-                    {getShiftsForDay(day).map((shift) => (
-                      <ShiftCard key={shift.id} shift={shift} />
-                    ))}
-                  </DayCell>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             // Month View
@@ -358,7 +405,7 @@ const CalendarPage = () => {
               </div>
               <div className="grid grid-cols-7">
                 {monthDays.map((day, i) => {
-                  const dayShifts = getShiftsForDay(day);
+                  const shift = getShiftForDay(day);
                   return (
                     <DayCell
                       key={i}
@@ -376,13 +423,8 @@ const CalendarPage = () => {
                       )}>
                         {format(day, 'd')}
                       </p>
-                      <div className="mt-1 space-y-1">
-                        {dayShifts.slice(0, 2).map((shift) => (
-                          <ShiftCard key={shift.id} shift={shift} compact />
-                        ))}
-                        {dayShifts.length > 2 && (
-                          <p className="text-[10px] text-muted-foreground">+{dayShifts.length - 2} more</p>
-                        )}
+                      <div className="mt-1">
+                        {shift && <ShiftCard shift={shift} compact />}
                       </div>
                     </DayCell>
                   );
@@ -390,6 +432,23 @@ const CalendarPage = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-6 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-primary/20 border border-primary/30" />
+            <span>Published</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-warning/20 border border-warning/30" />
+            <span>Draft</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Moon className="h-4 w-4" />
+            <Sun className="h-4 w-4" />
+            <span>5pm – 8am coverage</span>
+          </div>
         </div>
       </div>
     </MainLayout>
