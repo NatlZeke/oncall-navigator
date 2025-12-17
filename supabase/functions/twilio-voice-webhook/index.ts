@@ -38,39 +38,6 @@ const defaultOnCall = {
   afterHoursEnd: '08:00',
 };
 
-// 4-tier triage classification criteria
-const TRIAGE_CRITERIA = {
-  emergent: [
-    'sudden vision loss', 'acute vision loss', 'can\'t see', 'blind', 'lost vision',
-    'flashes with curtain', 'shadow in vision', 'curtain over vision', 'veil over',
-    'severe eye pain', 'extreme pain', 'worst pain', 'excruciating',
-    'post-op vision loss', 'surgery and can\'t see', 'after surgery blind',
-    'chemical in eye', 'chemical exposure', 'acid', 'bleach', 'alkali', 'chemical burn',
-    'trauma to eye', 'hit in eye', 'something in eye', 'foreign object',
-    'acute angle', 'halos around lights', 'nausea with eye pain', 'vomiting with eye'
-  ],
-  urgent: [
-    'worsening vision', 'vision getting worse', 'blurrier', 'more blurry',
-    'increasing pain', 'pain getting worse', 'moderate pain',
-    'increasing redness', 'more red', 'very red',
-    'post-op concern', 'after surgery', 'recent surgery', 'surgery last week',
-    'new floaters', 'new flashes', 'more floaters'
-  ],
-  nonUrgent: [
-    'mild irritation', 'slight discomfort', 'minor',
-    'dry eye', 'dry eyes', 'gritty feeling',
-    'stable floaters', 'floaters for years', 'always had floaters',
-    'not getting worse', 'same as before', 'no change',
-    'mild redness', 'little red'
-  ],
-  administrative: [
-    'billing', 'bill', 'payment', 'insurance', 'cost', 'price',
-    'schedule', 'appointment', 'reschedule', 'cancel appointment',
-    'refill', 'prescription', 'medication', 'drops',
-    'glasses', 'contacts', 'contact lenses', 'frames'
-  ]
-};
-
 // Safety-net message required at end of ALL clinical calls
 const SAFETY_NET_MESSAGE = "If symptoms worsen or you have sudden vision loss, severe pain, or a curtain in your vision, go to the ER or call 911.";
 
@@ -80,10 +47,14 @@ interface IntakeData {
   callbackNumber?: string;
   isEstablishedPatient?: boolean;
   hasRecentSurgery?: boolean;
+  // Red flag triage answers
+  hasVisionLoss?: boolean;
+  hasEyePain?: boolean;
+  hasFlashesFloaters?: boolean;
+  hasTraumaChemical?: boolean;
   primaryComplaint?: string;
   symptoms: string[];
   triageLevel?: 'emergent' | 'urgent' | 'nonUrgent' | 'administrative';
-  followUpAsked?: boolean;
 }
 
 // Pre-call summary structure
@@ -98,6 +69,14 @@ interface PreCallSummary {
   officeName: string;
   serviceLine: string;
 }
+
+// Check for administrative keywords
+const ADMINISTRATIVE_KEYWORDS = [
+  'billing', 'bill', 'payment', 'insurance', 'cost', 'price',
+  'schedule', 'appointment', 'reschedule', 'cancel',
+  'refill', 'prescription', 'medication', 'drops',
+  'glasses', 'contacts', 'contact lenses', 'frames'
+];
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -117,7 +96,7 @@ serve(async (req) => {
     const digits = formData.get('Digits') as string;
     const recordingUrl = formData.get('RecordingUrl') as string;
 
-    console.log('Voice Webhook:', { callSid, speechResult: speechResult?.substring(0, 50), digits });
+    console.log('Voice Webhook:', { callSid, speechResult, digits });
 
     const onCallInfo = mockOnCallData[calledPhone] || defaultOnCall;
 
@@ -164,64 +143,188 @@ serve(async (req) => {
 
     let twimlResponse: string;
 
-    // Streamlined conversation flow
+    // Step-by-step conversation flow with pauses
     switch (stage) {
       case 'welcome':
         twimlResponse = generateWelcomeResponse(onCallInfo.officeName, supabaseUrl);
-        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_info' });
+        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
         break;
 
-      case 'collect_info':
+      case 'collect_name':
         if (speechResult) {
-          // Extract name from response
           intakeData.patientName = speechResult;
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
-          twimlResponse = generateQuickInfoResponse(supabaseUrl);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'quick_info', intake_data: intakeData });
+          twimlResponse = generateEstablishedPatientQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_established', intake_data: intakeData });
         } else {
           twimlResponse = generateCollectNameResponse(supabaseUrl);
         }
         break;
 
-      case 'quick_info':
-        if (speechResult || digits) {
-          // Parse combined response for callback + patient status
-          const response = (speechResult || digits || '').toLowerCase();
-          intakeData.callbackNumber = digits || callerPhone;
-          intakeData.isEstablishedPatient = /yes|established|patient|am|i am/i.test(response);
-          intakeData.hasRecentSurgery = /surgery|operation|procedure/i.test(response);
-          transcript.push({ role: 'caller', content: speechResult || digits, timestamp: new Date().toISOString() });
-          
-          twimlResponse = generateComplaintQuestion(supabaseUrl);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_complaint', intake_data: intakeData });
+      case 'ask_established':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.isEstablishedPatient = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          twimlResponse = generateRecentSurgeryQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_surgery', intake_data: intakeData });
         } else {
-          twimlResponse = generateQuickInfoResponse(supabaseUrl);
+          twimlResponse = generateEstablishedPatientQuestion(supabaseUrl);
         }
         break;
 
-      case 'collect_complaint':
+      case 'ask_surgery':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.hasRecentSurgery = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Post-op patients with any concern = urgent, ask what's happening
+          twimlResponse = generateVisionLossQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_vision_loss', intake_data: intakeData });
+        } else {
+          twimlResponse = generateRecentSurgeryQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_vision_loss':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.hasVisionLoss = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // RED FLAG: Vision loss = emergent escalation
+          if (intakeData.hasVisionLoss) {
+            intakeData.triageLevel = 'emergent';
+            intakeData.primaryComplaint = 'Vision loss or sudden vision changes';
+            intakeData.symptoms.push('vision loss');
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent', callSid);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+          } else {
+            twimlResponse = generateEyePainQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_eye_pain', intake_data: intakeData });
+          }
+        } else {
+          twimlResponse = generateVisionLossQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_eye_pain':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.hasEyePain = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // RED FLAG: Severe eye pain (especially post-op) = emergent
+          if (intakeData.hasEyePain) {
+            const isSevere = /severe|extreme|worst|excruciating|terrible|unbearable/i.test(response);
+            if (isSevere || intakeData.hasRecentSurgery) {
+              intakeData.triageLevel = 'emergent';
+              intakeData.primaryComplaint = 'Severe eye pain';
+              intakeData.symptoms.push('severe eye pain');
+              twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent', callSid);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            } else {
+              // Mild/moderate pain - continue triage
+              intakeData.symptoms.push('eye pain');
+              twimlResponse = generateFlashesFloatersQuestion(supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_flashes', intake_data: intakeData });
+            }
+          } else {
+            twimlResponse = generateFlashesFloatersQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_flashes', intake_data: intakeData });
+          }
+        } else {
+          twimlResponse = generateEyePainQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_flashes':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.hasFlashesFloaters = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // RED FLAG: Flashes/floaters with curtain = emergent (retinal detachment)
+          if (intakeData.hasFlashesFloaters) {
+            const hasCurtain = /curtain|shadow|veil|dark|blocking/i.test(response);
+            if (hasCurtain) {
+              intakeData.triageLevel = 'emergent';
+              intakeData.primaryComplaint = 'Flashes/floaters with curtain or shadow in vision';
+              intakeData.symptoms.push('flashes/floaters with curtain');
+              twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent', callSid);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            } else {
+              // New floaters without curtain = urgent
+              intakeData.symptoms.push('flashes/floaters');
+              twimlResponse = generateTraumaQuestion(supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_trauma', intake_data: intakeData });
+            }
+          } else {
+            twimlResponse = generateTraumaQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_trauma', intake_data: intakeData });
+          }
+        } else {
+          twimlResponse = generateFlashesFloatersQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_trauma':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          intakeData.hasTraumaChemical = isAffirmative(response);
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // RED FLAG: Trauma or chemical = emergent
+          if (intakeData.hasTraumaChemical) {
+            intakeData.triageLevel = 'emergent';
+            intakeData.primaryComplaint = 'Eye trauma or chemical exposure';
+            intakeData.symptoms.push('trauma/chemical exposure');
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent', callSid);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+          } else {
+            // Ask for general complaint to determine administrative vs non-urgent
+            twimlResponse = generateGeneralComplaintQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_general', intake_data: intakeData });
+          }
+        } else {
+          twimlResponse = generateTraumaQuestion(supabaseUrl);
+        }
+        break;
+
+      case 'ask_general':
         if (speechResult) {
           intakeData.primaryComplaint = speechResult;
           intakeData.symptoms.push(speechResult);
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
           // Check if administrative
-          if (classifyAsAdministrative(speechResult)) {
+          if (isAdministrative(speechResult)) {
             intakeData.triageLevel = 'administrative';
             twimlResponse = generateAdministrativeDeflection(onCallInfo.officeName);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
             await logNotification(supabase, 'administrative_deflection', callerPhone, { complaint: speechResult }, 'deflected');
           } else {
-            // Any medical complaint - connect to doctor immediately
-            intakeData.triageLevel = detectEmergentSymptoms(speechResult, intakeData) ? 'emergent' : 'urgent';
-            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, intakeData.triageLevel, callSid);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            // At this point: no red flags confirmed, but still has some concern
+            // Check if post-op or has any symptoms = urgent, else non-urgent voicemail
+            const hasAnyConcern = intakeData.hasEyePain || intakeData.hasFlashesFloaters || intakeData.hasRecentSurgery;
+            
+            if (hasAnyConcern) {
+              intakeData.triageLevel = 'urgent';
+              twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'urgent', callSid);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'escalating', intake_data: intakeData });
+            } else {
+              // Non-urgent: offer voicemail
+              intakeData.triageLevel = 'nonUrgent';
+              twimlResponse = generateVoicemailPrompt(supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+              await logSafetyMessageDelivered(supabase, callSid, callerPhone);
+            }
           }
         } else {
-          twimlResponse = generateComplaintQuestion(supabaseUrl);
+          twimlResponse = generateGeneralComplaintQuestion(supabaseUrl);
         }
         break;
-
 
       case 'voicemail':
         if (recordingUrl) {
@@ -240,7 +343,7 @@ serve(async (req) => {
 
       default:
         twimlResponse = generateWelcomeResponse(onCallInfo.officeName, supabaseUrl);
-        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_info' });
+        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
     }
 
     return new Response(twimlResponse, {
@@ -260,6 +363,15 @@ serve(async (req) => {
 });
 
 // Helper functions
+function isAffirmative(text: string): boolean {
+  return /yes|yeah|yep|yup|correct|right|affirmative|i do|i am|i have|uh-huh|mm-hmm|had|true/i.test(text);
+}
+
+function isAdministrative(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ADMINISTRATIVE_KEYWORDS.some(k => lower.includes(k));
+}
+
 async function updateConversation(supabase: any, callSid: string, transcript: any[], metadata: any) {
   await supabase
     .from('twilio_conversations')
@@ -278,7 +390,6 @@ async function logNotification(supabase: any, type: string, phone: string, conte
   });
 }
 
-// Log safety message delivery for compliance tracking
 async function logSafetyMessageDelivered(supabase: any, callSid: string, callerPhone: string) {
   await logNotification(
     supabase,
@@ -292,34 +403,6 @@ async function logSafetyMessageDelivered(supabase: any, callSid: string, callerP
     'delivered',
     { compliance_verified: true, message_type: 'safety_net' }
   );
-}
-
-function classifyAsAdministrative(text: string): boolean {
-  const lower = text.toLowerCase();
-  return TRIAGE_CRITERIA.administrative.some(k => lower.includes(k));
-}
-
-function detectEmergentSymptoms(text: string, intakeData: IntakeData): boolean {
-  const allText = [...intakeData.symptoms, text].join(' ').toLowerCase();
-  
-  if (TRIAGE_CRITERIA.emergent.some(k => allText.includes(k))) return true;
-  
-  const hasFlashCurtain = (allText.includes('flash') || allText.includes('floater')) && 
-                          (allText.includes('curtain') || allText.includes('shadow') || allText.includes('veil'));
-  const postOpSevere = intakeData.hasRecentSurgery === true && 
-                       (allText.includes('severe') || allText.includes('vision loss') || allText.includes('can\'t see'));
-  
-  return hasFlashCurtain || postOpSevere;
-}
-
-function classifyTriage(intakeData: IntakeData): 'emergent' | 'urgent' | 'nonUrgent' | 'administrative' {
-  const allText = intakeData.symptoms.join(' ').toLowerCase();
-  
-  if (TRIAGE_CRITERIA.emergent.some(k => allText.includes(k))) return 'emergent';
-  if (TRIAGE_CRITERIA.urgent.some(k => allText.includes(k))) return 'urgent';
-  if (TRIAGE_CRITERIA.nonUrgent.some(k => allText.includes(k))) return 'nonUrgent';
-  
-  return 'urgent'; // Default to urgent if unclear
 }
 
 async function handleEscalation(
@@ -372,15 +455,16 @@ async function handleEscalation(
   }, 'connecting', { workflow_step: 3 });
 
   const urgencyMsg = level === 'emergent' 
-    ? "Connecting you to the on-call doctor now."
-    : "Connecting you to the on-call physician.";
+    ? "Connecting you to the on-call doctor now for your emergency."
+    : "Connecting you to the on-call physician for your concern.";
 
-  // Log safety message delivery for failed call scenario
+  // Log safety message delivery
   await logSafetyMessageDelivered(supabase, callSid, callerPhone);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">${urgencyMsg}</Say>
+  <Pause length="1"/>
   <Dial callerId="${calledPhone}" timeout="30">
     <Number>${providerPhone}</Number>
   </Dial>
@@ -442,12 +526,18 @@ Call incoming.`;
   }
 }
 
-// TwiML Generators - Optimized for speed
+// TwiML Generators - Each question with pause for caller response
+
 function generateWelcomeResponse(officeName: string, baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">After hours service for ${escapeXml(officeName)}. For emergencies, dial 911. Please state your name.</Say>
-  <Gather input="speech" timeout="3" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" />
+  <Say voice="alice">Thank you for calling ${escapeXml(officeName)} after hours service.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">If this is an emergency, please hang up and dial 911.</Say>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Please state your name.</Say>
+  </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
@@ -455,38 +545,100 @@ function generateWelcomeResponse(officeName: string, baseUrl: string): string {
 function generateCollectNameResponse(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" timeout="3" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="alice">Your name please.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-}
-
-function generateQuickInfoResponse(baseUrl: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="speech dtmf" timeout="3" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="alice">Are you an established patient? Had recent eye surgery?</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-}
-
-function generateComplaintQuestion(baseUrl: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
   <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="alice">What symptoms are you experiencing?</Say>
+    <Say voice="alice">I didn't catch that. Please state your name.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
 
+function generateEstablishedPatientQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Are you an established patient with our office?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateRecentSurgeryQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Have you had eye surgery recently?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateVisionLossQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Are you experiencing vision loss or sudden vision changes?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateEyePainQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Are you experiencing eye pain? If yes, is it mild, moderate, or severe?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateFlashesFloatersQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Do you see flashes, floaters, or a curtain or shadow in your vision?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateTraumaQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Have you had any trauma to your eye or chemical exposure?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateGeneralComplaintQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="6" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Please briefly describe what's going on with your eyes.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
 
 function generateAdministrativeDeflection(officeName: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">This is an administrative request. Please call back during business hours, Monday through Friday, 8 to 5. ${SAFETY_NET_MESSAGE} Goodbye.</Say>
+  <Say voice="alice">This sounds like an administrative matter.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">Please call back during business hours, Monday through Friday, 8 AM to 5 PM.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Pause length="1"/>
+  <Say voice="alice">Goodbye.</Say>
   <Hangup/>
 </Response>`;
 }
@@ -494,7 +646,12 @@ function generateAdministrativeDeflection(officeName: string): string {
 function generateVoicemailPrompt(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">This doesn't require immediate attention. Leave a message after the tone and we'll call back next business day. ${SAFETY_NET_MESSAGE}</Say>
+  <Say voice="alice">Based on what you've described, this doesn't appear to be an emergency.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">Please leave a message after the tone and someone will return your call the next business day.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Pause length="1"/>
   <Record maxLength="60" action="${baseUrl}/functions/v1/twilio-voice-webhook" transcribe="true" />
 </Response>`;
 }
@@ -502,7 +659,11 @@ function generateVoicemailPrompt(baseUrl: string): string {
 function generateVoicemailConfirmation(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Message recorded. ${SAFETY_NET_MESSAGE} Goodbye.</Say>
+  <Say voice="alice">Your message has been recorded.</Say>
+  <Pause length="1"/>
+  <Say voice="alice">${SAFETY_NET_MESSAGE}</Say>
+  <Pause length="1"/>
+  <Say voice="alice">Goodbye.</Say>
   <Hangup/>
 </Response>`;
 }
