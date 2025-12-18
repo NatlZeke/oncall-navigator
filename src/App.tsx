@@ -29,6 +29,7 @@ import CallLogsPage from "./pages/CallLogsPage";
 import SLADashboardPage from "./pages/SLADashboardPage";
 import ComplianceCenterPage from "./pages/ComplianceCenterPage";
 import CallAnalyticsDashboardPage from "./pages/CallAnalyticsDashboardPage";
+import PrescriptionQueuePage from "./pages/PrescriptionQueuePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -66,6 +67,7 @@ const App = () => (
             <Route path="/sla-dashboard" element={<SLADashboardPage />} />
             <Route path="/compliance-center" element={<ComplianceCenterPage />} />
             <Route path="/call-analytics" element={<CallAnalyticsDashboardPage />} />
+            <Route path="/prescription-queue" element={<PrescriptionQueuePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -40,6 +40,7 @@ import {
   BarChart3,
   ShieldAlert,
   Home,
+  Pill,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -130,6 +131,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
       title: 'Escalations',
       items: [
         { to: '/escalation-management', icon: <Zap className="h-4 w-4" />, label: 'Active Escalations' },
+        { to: '/prescription-queue', icon: <Pill className="h-4 w-4" />, label: 'Prescription Queue' },
         { to: '/call-logs', icon: <ClipboardList className="h-4 w-4" />, label: 'Call Logs' },
         { to: '/call-analytics', icon: <Activity className="h-4 w-4" />, label: 'Call Analytics' },
         { to: '/sla-dashboard', icon: <BarChart3 className="h-4 w-4" />, label: 'SLA Reports' },
