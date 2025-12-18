@@ -136,6 +136,10 @@ const ADMINISTRATIVE_KEYWORDS = [
 ];
 
 // PRESCRIPTION REQUEST DETECTION - Strict rule: never wake on-call for refills
+// DOCTOR PROTECTION FEATURE: Prescription refills are intentionally routed to
+// next-business-day review so on-call physicians are reserved for true 
+// ophthalmic emergencies. This materially reduces physician burnout, after-hours
+// errors, and malpractice exposure from rushed refills.
 const PRESCRIPTION_KEYWORDS = [
   'refill', 'prescription', 'medication', 'drops', 'eye drops',
   'medicine', 'rx', 'renew', 'renewal', 'out of', 'ran out',
@@ -468,35 +472,74 @@ serve(async (req) => {
           intakeData.medicationRequested = speechResult;
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
-          // Log prescription request summary (NOT sent to on-call)
-          const prescriptionSummary = {
-            officeId: 'hill-country-eye',
-            officeName: onCallInfo.officeName,
-            requestType: 'PRESCRIPTION_REQUEST',
-            callerName: intakeData.patientName || 'Unknown',
-            dob: intakeData.dateOfBirth || 'Not provided',
-            callbackNumber: intakeData.callbackNumber || callerPhone,
-            medicationRequested: intakeData.medicationRequested,
-            notes: 'Prescription request after hours. No emergent ophthalmic symptoms reported.',
-            triageLevel: 'ADMINISTRATIVE',
-            followUp: 'Next business day'
-          };
-          
-          await logNotification(supabase, 'prescription_request', callerPhone, prescriptionSummary, 'recorded', {
-            workflow: 'prescription_next_business_day',
-            escalated: false
-          });
-          await logSafetyMessageDelivered(supabase, callSid, callerPhone);
-          
-          twimlResponse = generatePrescriptionConfirmation();
+          // SAFETY CHECK: Before closing, confirm no emergent symptoms
+          twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
           await updateConversation(supabase, callSid, transcript, { 
             ...metadata, 
-            stage: 'complete', 
-            intake_data: intakeData,
-            prescription_summary: prescriptionSummary
+            stage: 'ask_prescription_safety_check', 
+            intake_data: intakeData 
           });
         } else {
           twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+        }
+        break;
+
+      // FINAL SAFETY CONFIRMATION for prescription requests
+      case 'ask_prescription_safety_check':
+        if (speechResult) {
+          const response = speechResult.toLowerCase();
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Check if caller NOW reports emergent symptoms
+          const hasEmergentNow = isAffirmative(response) || 
+            /yes|vision|loss|pain|severe|hurt|injury|injured|trauma|curtain|shadow/i.test(response);
+          
+          if (hasEmergentNow && !response.includes('no')) {
+            // PIVOT: Caller has emergent symptoms - switch to full triage
+            console.log('Prescription caller reported emergent symptoms during safety check - escalating');
+            intakeData.triageLevel = 'emergent';
+            intakeData.primaryComplaint = 'Reported emergent symptoms during prescription safety check';
+            intakeData.symptoms.push('emergent symptoms reported at safety check');
+            twimlResponse = await handleEscalation(supabase, intakeData, onCallInfo, callerPhone, calledPhone, 'emergent', callSid);
+            await updateConversation(supabase, callSid, transcript, { 
+              ...metadata, 
+              stage: 'escalating', 
+              intake_data: intakeData,
+              safety_check_triggered_escalation: true
+            });
+          } else {
+            // No emergent symptoms confirmed - proceed with next-business-day workflow
+            const prescriptionSummary = {
+              officeId: 'hill-country-eye',
+              officeName: onCallInfo.officeName,
+              requestType: 'PRESCRIPTION_REQUEST',
+              callerName: intakeData.patientName || 'Unknown',
+              dob: intakeData.dateOfBirth || 'Not provided',
+              callbackNumber: intakeData.callbackNumber || callerPhone,
+              medicationRequested: intakeData.medicationRequested || 'Not specified',
+              notes: 'Prescription request after hours. Safety check confirmed no emergent symptoms.',
+              triageLevel: 'ADMINISTRATIVE',
+              followUp: 'Next business day',
+              safetyCheckCompleted: true
+            };
+            
+            await logNotification(supabase, 'prescription_request', callerPhone, prescriptionSummary, 'recorded', {
+              workflow: 'prescription_next_business_day',
+              escalated: false,
+              safety_check_passed: true
+            });
+            await logSafetyMessageDelivered(supabase, callSid, callerPhone);
+            
+            twimlResponse = generatePrescriptionConfirmation();
+            await updateConversation(supabase, callSid, transcript, { 
+              ...metadata, 
+              stage: 'complete', 
+              intake_data: intakeData,
+              prescription_summary: prescriptionSummary
+            });
+          }
+        } else {
+          twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
         }
         break;
 
@@ -878,6 +921,18 @@ function generatePrescriptionMedicationQuestion(baseUrl: string): string {
   <Pause length="1"/>
   <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="alice">What medication are you requesting, if you know the name?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+// FINAL SAFETY CHECK - Required before closing any prescription-only call
+function generatePrescriptionSafetyCheck(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Just to confirm. Are you having sudden vision loss, severe eye pain, or injury to the eye right now?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
