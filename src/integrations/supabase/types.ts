@@ -443,6 +443,42 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_routing_config: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          office_id: string
+          provider_name: string
+          provider_phone: string
+          provider_user_id: string
+          routing_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          office_id: string
+          provider_name: string
+          provider_phone: string
+          provider_user_id: string
+          routing_type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          office_id?: string
+          provider_name?: string
+          provider_phone?: string
+          provider_user_id?: string
+          routing_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sla_policies: {
         Row: {
           breach_minutes: number

@@ -41,6 +41,7 @@ import {
   ShieldAlert,
   Home,
   Pill,
+  UserCog,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -152,6 +153,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
       title: 'Configuration',
       items: [
         { to: '/service-lines', icon: <AlertTriangle className="h-4 w-4" />, label: 'Service Lines' },
+        { to: '/provider-routing', icon: <UserCog className="h-4 w-4" />, label: 'Provider Routing' },
         { to: '/holidays', icon: <Calendar className="h-4 w-4" />, label: 'Holidays' },
         { to: '/escalation', icon: <Phone className="h-4 w-4" />, label: 'Escalation Paths' },
         { to: '/credentialing', icon: <ShieldCheck className="h-4 w-4" />, label: 'Credentialing' },
