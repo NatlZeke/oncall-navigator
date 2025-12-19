@@ -5,7 +5,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { StatCard } from '@/components/StatCard';
 import { SingleOnCallCard } from '@/components/SingleOnCallCard';
 import { HeroSection } from '@/components/HeroSection';
-import { getSingleOnCallProvider, getShiftsForOffice } from '@/data/mockData';
+import { OperationalDashboard } from '@/components/OperationalDashboard';
+import { getSingleOnCallProvider, getShiftsForOffice, getIncidentEscalationsForOffice } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
@@ -69,6 +70,18 @@ export function OfficeDashboard() {
 
   const allShifts = getShiftsForOffice(currentOffice.id);
   const draftShifts = allShifts.filter((s) => s.status === 'draft');
+  const escalations = getIncidentEscalationsForOffice(currentOffice.id);
+  const activeEscalations = escalations.filter(e => e.status === 'active' || e.status === 'acknowledged');
+
+  // Format for OperationalDashboard
+  const formattedEscalations = activeEscalations.map(e => ({
+    id: e.id,
+    severity: e.severity,
+    serviceLineName: e.service_line?.name || 'General',
+    initiatedAt: e.initiated_at,
+    currentTier: e.current_tier,
+    status: e.status,
+  }));
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -94,6 +107,19 @@ export function OfficeDashboard() {
         </Link>
       </div>
 
+      {/* Operational Dashboard - Single Overview */}
+      <OperationalDashboard
+        onCallProvider={singleOnCall ? {
+          id: singleOnCall.provider.id,
+          name: singleOnCall.provider.full_name || 'Unknown',
+          phone: singleOnCall.provider.phone_mobile || '',
+        } : null}
+        activeEscalations={formattedEscalations}
+        pendingAcknowledgements={[]}
+        coverageGaps={[]}
+        isLoading={loading}
+      />
+
       {/* Quick Actions */}
       <div className="grid gap-4 sm:grid-cols-4">
         <Link to="/call-logs" className="block">
@@ -106,22 +132,22 @@ export function OfficeDashboard() {
         <Link to="/escalation-management" className="block">
           <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
             <AlertTriangle className="h-6 w-6 text-warning mb-2" />
-            <h3 className="font-semibold text-sm">Active Escalations</h3>
-            <p className="text-xs text-muted-foreground">Manage alerts</p>
+            <h3 className="font-semibold text-sm">Manage Escalations</h3>
+            <p className="text-xs text-muted-foreground">View & respond</p>
           </div>
         </Link>
         <Link to="/after-hours" className="block">
           <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
             <Calendar className="h-6 w-6 text-primary mb-2" />
-            <h3 className="font-semibold text-sm">On-Call Schedule</h3>
-            <p className="text-xs text-muted-foreground">View schedule</p>
+            <h3 className="font-semibold text-sm">Schedule</h3>
+            <p className="text-xs text-muted-foreground">On-call assignments</p>
           </div>
         </Link>
         <Link to="/sla-dashboard" className="block">
           <div className="rounded-xl border bg-card p-4 hover:bg-muted/50 transition-colors">
             <BarChart3 className="h-6 w-6 text-success mb-2" />
-            <h3 className="font-semibold text-sm">SLA Reports</h3>
-            <p className="text-xs text-muted-foreground">Performance</p>
+            <h3 className="font-semibold text-sm">Performance</h3>
+            <p className="text-xs text-muted-foreground">SLA reports</p>
           </div>
         </Link>
       </div>

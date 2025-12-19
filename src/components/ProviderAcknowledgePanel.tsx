@@ -25,10 +25,10 @@ interface ProviderAcknowledgePanelProps {
   onAcknowledge: (ackType: AckType, notes?: string) => void;
 }
 
-const ackButtons: Array<{ type: AckType; icon: React.ReactNode; label: string; variant: 'default' | 'outline' | 'secondary' }> = [
-  { type: 'received', icon: <CheckCircle className="h-4 w-4" />, label: 'Acknowledged', variant: 'default' },
-  { type: 'called_patient', icon: <Phone className="h-4 w-4" />, label: 'Called Patient', variant: 'outline' },
-  { type: 'advised_er', icon: <AlertTriangle className="h-4 w-4" />, label: 'Advised ER', variant: 'outline' },
+const ackButtons: Array<{ type: AckType; icon: React.ReactNode; label: string; variant: 'default' | 'outline' | 'secondary'; primary?: boolean }> = [
+  { type: 'received', icon: <CheckCircle className="h-4 w-4" />, label: 'Got It', variant: 'default', primary: true },
+  { type: 'called_patient', icon: <Phone className="h-4 w-4" />, label: 'Called', variant: 'outline' },
+  { type: 'advised_er', icon: <AlertTriangle className="h-4 w-4" />, label: 'ER Advised', variant: 'outline' },
   { type: 'resolved', icon: <CheckSquare className="h-4 w-4" />, label: 'Resolved', variant: 'secondary' },
   { type: 'handed_off', icon: <ArrowRightLeft className="h-4 w-4" />, label: 'Handed Off', variant: 'secondary' },
 ];
@@ -64,14 +64,14 @@ export function ProviderAcknowledgePanel({
   const elapsedMinutes = Math.round((Date.now() - new Date(initiatedAt).getTime()) / 60000);
 
   return (
-    <Card className="border-primary/20">
+    <Card className="border-primary/20 bg-primary/5">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
               Active Escalation
               <Badge variant={severity === 'emergent' ? 'destructive' : 'secondary'}>
-                {severity}
+                {severity.toUpperCase()}
               </Badge>
             </CardTitle>
             <CardDescription>
@@ -81,47 +81,62 @@ export function ProviderAcknowledgePanel({
           <div className="text-right">
             <div className="flex items-center gap-1 text-muted-foreground">
               <Clock className="h-4 w-4" />
-              <span className="text-sm">{elapsedMinutes} min ago</span>
+              <span className="text-sm font-mono">{elapsedMinutes} min</span>
             </div>
             <Badge variant="outline" className="mt-1">Tier {currentTier}</Badge>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Quick Action Buttons */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {ackButtons.map((btn) => (
-            <Button
-              key={btn.type}
-              variant={btn.variant}
-              size="sm"
-              disabled={isSubmitting}
-              onClick={() => handleAcknowledge(btn.type)}
-              className="flex items-center gap-2"
-            >
-              {selectedAck === btn.type && isSubmitting ? (
-                <Clock className="h-4 w-4 animate-spin" />
-              ) : (
-                btn.icon
-              )}
-              {btn.label}
-            </Button>
-          ))}
+        {/* No Blind Calls Guarantee */}
+        <div className="flex items-center gap-2 p-2 rounded bg-success/10 border border-success/20">
+          <CheckCircle className="h-4 w-4 text-success" />
+          <span className="text-xs font-medium text-success">Summary delivered before this escalation</span>
         </div>
 
-        {/* Optional Notes */}
+        {/* One-Tap Action Buttons - Large & Accessible */}
         <div className="space-y-2">
-          <Textarea
-            placeholder="Optional notes (no PHI)..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="text-sm"
-          />
-          <p className="text-xs text-muted-foreground">
-            Notes are for internal documentation only. Do not include patient identifiable information.
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            One-Tap Actions (no typing required)
           </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {ackButtons.map((btn) => (
+              <Button
+                key={btn.type}
+                variant={btn.variant}
+                size="lg"
+                disabled={isSubmitting}
+                onClick={() => handleAcknowledge(btn.type)}
+                className={`flex items-center justify-center gap-2 h-12 ${
+                  btn.primary ? 'col-span-2 sm:col-span-1' : ''
+                }`}
+              >
+                {selectedAck === btn.type && isSubmitting ? (
+                  <Clock className="h-4 w-4 animate-spin" />
+                ) : (
+                  btn.icon
+                )}
+                {btn.label}
+              </Button>
+            ))}
+          </div>
         </div>
+
+        {/* Optional Notes - Collapsed by default */}
+        <details className="group">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
+            + Add optional notes (no PHI)
+          </summary>
+          <div className="mt-2 space-y-2">
+            <Textarea
+              placeholder="Optional notes..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="text-sm"
+            />
+          </div>
+        </details>
       </CardContent>
     </Card>
   );
