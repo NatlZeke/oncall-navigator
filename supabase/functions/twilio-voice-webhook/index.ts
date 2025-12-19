@@ -60,37 +60,92 @@ async function validateTwilioSignature(
   return isValid;
 }
 
-// Mock on-call data - ONE provider per office
-const mockOnCallData: Record<string, { 
-  officeName: string; 
+// PROVIDER ROUTING CONFIGURATION
+// Todd or Vin on-call: They cover their OWN patients only - must ask who patient's doctor is
+// Chelsea or Nate on-call: They handle ALL patients (both Todd and Vin's patients)
+// This is a 3-week rotation cycle
+const PROVIDERS_OWN_PATIENTS_ONLY = ['todd', 'vin', 'vincent'];
+const PROVIDERS_COVER_ALL = ['chelsea', 'nate', 'nathan'];
+
+// Provider directory for routing
+const PROVIDER_DIRECTORY: Record<string, { name: string; phone: string }> = {
+  'todd': { name: 'Dr. Todd R. Shepler, M.D.', phone: '+15125551002' },
+  'vin': { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
+  'vincent': { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
+  'chelsea': { name: 'Dr. Chelsea Devitt, O.D., FAAO', phone: '+15125551004' },
+  'nate': { name: 'Dr. Nathan E. Osterman, O.D.', phone: '+15125551003' },
+  'nathan': { name: 'Dr. Nathan E. Osterman, O.D.', phone: '+15125551003' },
+};
+
+// Office mapping from phone numbers
+const officePhoneMap: Record<string, { officeId: string; officeName: string }> = {
+  '+15125281144': { officeId: 'office-1', officeName: 'Hill Country Eye Center - Cedar Park' },
+  '+15125281155': { officeId: 'office-2', officeName: 'Hill Country Eye Center - Georgetown' },
+};
+
+const defaultOffice = { officeId: 'office-1', officeName: 'Hill Country Eye Center' };
+
+interface OnCallInfo {
+  officeName: string;
   serviceLine: string;
   onCallProvider: { name: string; phone: string };
   afterHoursStart: string;
   afterHoursEnd: string;
-}> = {
-  '+15125281144': {
-    officeName: 'Hill Country Eye Center - Cedar Park',
-    serviceLine: 'General Ophthalmology',
-    onCallProvider: { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
-    afterHoursStart: '17:00',
-    afterHoursEnd: '08:00',
-  },
-  '+15125281155': {
-    officeName: 'Hill Country Eye Center - Georgetown', 
-    serviceLine: 'General Ophthalmology',
-    onCallProvider: { name: 'Dr. Chelsea Devitt, O.D., FAAO', phone: '+15125551004' },
-    afterHoursStart: '17:00',
-    afterHoursEnd: '08:00',
-  },
-};
+  requiresPatientDoctorConfirmation: boolean; // True if Todd/Vin on-call
+}
 
-const defaultOnCall = {
-  officeName: 'Hill Country Eye Center',
-  serviceLine: 'General Ophthalmology',
-  onCallProvider: { name: 'On-Call Provider', phone: '+15125551001' },
-  afterHoursStart: '17:00',
-  afterHoursEnd: '08:00',
-};
+// Get on-call info from database
+async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCallInfo> {
+  const officeInfo = officePhoneMap[calledPhone] || defaultOffice;
+  const today = new Date().toISOString().split('T')[0];
+  
+  console.log('Looking up on-call for:', { officeId: officeInfo.officeId, date: today });
+  
+  const { data: assignment, error } = await supabase
+    .from('oncall_assignments')
+    .select('*')
+    .eq('office_id', officeInfo.officeId)
+    .eq('assignment_date', today)
+    .eq('status', 'active')
+    .single();
+  
+  if (error || !assignment) {
+    console.log('No on-call assignment found, using default');
+    return {
+      officeName: officeInfo.officeName,
+      serviceLine: 'General Ophthalmology',
+      onCallProvider: { name: 'On-Call Provider', phone: '+15125551001' },
+      afterHoursStart: '17:00',
+      afterHoursEnd: '08:00',
+      requiresPatientDoctorConfirmation: false,
+    };
+  }
+  
+  console.log('Found on-call assignment:', assignment.provider_name);
+  
+  // Check if this provider only covers their own patients
+  const providerNameLower = assignment.provider_name.toLowerCase();
+  const requiresConfirmation = PROVIDERS_OWN_PATIENTS_ONLY.some(p => providerNameLower.includes(p));
+  
+  console.log('Provider routing:', { 
+    provider: assignment.provider_name, 
+    requiresPatientDoctorConfirmation: requiresConfirmation 
+  });
+  
+  return {
+    officeName: officeInfo.officeName,
+    serviceLine: 'General Ophthalmology',
+    onCallProvider: { 
+      name: assignment.provider_name, 
+      phone: assignment.provider_phone.replace(/[^\d+]/g, '').startsWith('+') 
+        ? assignment.provider_phone.replace(/[^\d+]/g, '')
+        : '+1' + assignment.provider_phone.replace(/\D/g, '')
+    },
+    afterHoursStart: assignment.after_hours_start,
+    afterHoursEnd: assignment.after_hours_end,
+    requiresPatientDoctorConfirmation: requiresConfirmation,
+  };
+}
 
 // Safety-net message required at end of ALL clinical calls
 const SAFETY_NET_MESSAGE = "If symptoms worsen or you have sudden vision loss, severe pain, or a curtain in your vision, go to the ER or call 911.";
@@ -113,6 +168,9 @@ interface IntakeData {
   // Prescription-specific fields
   isPrescriptionRequest?: boolean;
   medicationRequested?: string;
+  // Provider routing - used when Todd/Vin on-call (own patients only)
+  patientDoctor?: string;
+  routedToProvider?: { name: string; phone: string };
 }
 
 // Pre-call summary structure
@@ -183,7 +241,12 @@ serve(async (req) => {
 
     console.log('Voice Webhook:', { callSid, speechResult, digits });
 
-    const onCallInfo = mockOnCallData[calledPhone] || defaultOnCall;
+    // Get on-call info from database
+    const onCallInfo = await getOnCallInfo(supabase, calledPhone);
+    console.log('On-call info:', { 
+      provider: onCallInfo.onCallProvider.name, 
+      requiresConfirmation: onCallInfo.requiresPatientDoctorConfirmation 
+    });
 
     // Get or create conversation record
     let { data: conversation } = await supabase
@@ -251,10 +314,63 @@ serve(async (req) => {
           const response = speechResult.toLowerCase();
           intakeData.isEstablishedPatient = isAffirmative(response);
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
-          twimlResponse = generateRecentSurgeryQuestion(supabaseUrl);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_surgery', intake_data: intakeData });
+          
+          // ROUTING LOGIC: If Todd/Vin on-call and patient is established, ask who their doctor is
+          if (onCallInfo.requiresPatientDoctorConfirmation && intakeData.isEstablishedPatient) {
+            twimlResponse = generateAskPatientDoctorQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { 
+              ...metadata, 
+              stage: 'ask_patient_doctor', 
+              intake_data: intakeData,
+              requires_doctor_confirmation: true
+            });
+          } else {
+            // Chelsea/Nate on-call OR new patient - proceed normally
+            twimlResponse = generateRecentSurgeryQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_surgery', intake_data: intakeData });
+          }
         } else {
           twimlResponse = generateEstablishedPatientQuestion(supabaseUrl);
+        }
+        break;
+
+      // NEW STAGE: Ask who patient's doctor is (only when Todd/Vin on-call)
+      case 'ask_patient_doctor':
+        if (speechResult) {
+          const doctorResponse = speechResult.toLowerCase();
+          intakeData.patientDoctor = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Determine which provider to route to based on patient's stated doctor
+          let routeToProvider = onCallInfo.onCallProvider; // Default to on-call
+          
+          // Check if patient mentioned Todd
+          if (/todd|shepler/i.test(doctorResponse)) {
+            routeToProvider = PROVIDER_DIRECTORY['todd'];
+            console.log('Patient of Dr. Todd - routing to Todd');
+          }
+          // Check if patient mentioned Vin/Vincent
+          else if (/vin|vincent|restivo/i.test(doctorResponse)) {
+            routeToProvider = PROVIDER_DIRECTORY['vin'];
+            console.log('Patient of Dr. Vin - routing to Vin');
+          }
+          // If unclear or don't know, route to on-call
+          else {
+            console.log('Patient doctor unclear - routing to on-call:', onCallInfo.onCallProvider.name);
+          }
+          
+          intakeData.routedToProvider = routeToProvider;
+          
+          // Continue with triage
+          twimlResponse = generateRecentSurgeryQuestion(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { 
+            ...metadata, 
+            stage: 'ask_surgery', 
+            intake_data: intakeData,
+            routed_provider: routeToProvider
+          });
+        } else {
+          twimlResponse = generateAskPatientDoctorQuestion(supabaseUrl);
         }
         break;
 
@@ -618,13 +734,22 @@ async function logSafetyMessageDelivered(supabase: any, callSid: string, callerP
 async function handleEscalation(
   supabase: any,
   intakeData: IntakeData,
-  onCallInfo: any,
+  onCallInfo: OnCallInfo,
   callerPhone: string,
   calledPhone: string,
   level: string,
   callSid: string
 ): Promise<string> {
-  const providerPhone = onCallInfo.onCallProvider.phone;
+  // PROVIDER ROUTING: Use routed provider if set (Todd/Vin own-patients logic), else use on-call
+  const targetProvider = intakeData.routedToProvider || onCallInfo.onCallProvider;
+  const providerPhone = targetProvider.phone;
+  const providerName = targetProvider.name;
+  
+  console.log('Escalation routing:', { 
+    targetProvider: providerName, 
+    reason: intakeData.routedToProvider ? 'Patient doctor specified' : 'On-call default',
+    patientDoctor: intakeData.patientDoctor || 'Not specified'
+  });
   
   // STEP 1: Create structured summary (MANDATORY before any call)
   const summary: PreCallSummary = {
@@ -639,11 +764,13 @@ async function handleEscalation(
     serviceLine: onCallInfo.serviceLine
   };
 
-  // Log summary creation
+  // Log summary creation with routing info
   await logNotification(supabase, 'summary_created', callerPhone, {
     summary,
     step: 'summary_created',
-    call_sid: callSid
+    call_sid: callSid,
+    routed_to: providerName,
+    patient_doctor: intakeData.patientDoctor
   }, 'created', { workflow_step: 1 });
 
   // STEP 2: Send pre-call SMS (MANDATORY - no call without summary delivery)
@@ -652,16 +779,18 @@ async function handleEscalation(
   // Log escalation with summary delivery status
   await logNotification(supabase, `${level}_escalation`, providerPhone, {
     summary,
-    providerNotified: onCallInfo.onCallProvider.name,
+    providerNotified: providerName,
     summaryDelivered: smsDelivered,
-    step: 'escalation_initiated'
+    step: 'escalation_initiated',
+    routing_reason: intakeData.routedToProvider ? 'patient_doctor_match' : 'oncall_default'
   }, smsDelivered ? 'escalating' : 'summary_failed', { workflow_step: 2 });
 
   // STEP 3: Connect call (only after summary sent)
   await logNotification(supabase, 'call_initiated', providerPhone, {
     call_sid: callSid,
     triageLevel: level,
-    step: 'call_connecting'
+    step: 'call_connecting',
+    provider: providerName
   }, 'connecting', { workflow_step: 3 });
 
   const urgencyMsg = level === 'emergent' 
@@ -947,6 +1076,18 @@ function generatePrescriptionConfirmation(): string {
   <Pause length="1"/>
   <Say voice="alice">Goodbye.</Say>
   <Hangup/>
+</Response>`;
+}
+
+// Ask patient who their regular doctor is (used when Todd/Vin on-call - own patients only)
+function generateAskPatientDoctorQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="alice">Who is your regular doctor at our practice? For example, Doctor Todd, Doctor Vin, or Doctor Chelsea.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
 
