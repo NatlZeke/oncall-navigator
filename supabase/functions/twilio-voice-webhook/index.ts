@@ -60,22 +60,9 @@ async function validateTwilioSignature(
   return isValid;
 }
 
-// PROVIDER ROUTING CONFIGURATION
-// Todd or Vin on-call: They cover their OWN patients only - must ask who patient's doctor is
-// Chelsea or Nate on-call: They handle ALL patients (both Todd and Vin's patients)
-// This is a 3-week rotation cycle
-const PROVIDERS_OWN_PATIENTS_ONLY = ['todd', 'vin', 'vincent'];
-const PROVIDERS_COVER_ALL = ['chelsea', 'nate', 'nathan'];
-
-// Provider directory for routing
-const PROVIDER_DIRECTORY: Record<string, { name: string; phone: string }> = {
-  'todd': { name: 'Dr. Todd R. Shepler, M.D.', phone: '+15125551002' },
-  'vin': { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
-  'vincent': { name: 'Dr. Vincent A. Restivo, M.D.', phone: '+15125551001' },
-  'chelsea': { name: 'Dr. Chelsea Devitt, O.D., FAAO', phone: '+15125551004' },
-  'nate': { name: 'Dr. Nathan E. Osterman, O.D.', phone: '+15125551003' },
-  'nathan': { name: 'Dr. Nathan E. Osterman, O.D.', phone: '+15125551003' },
-};
+// PROVIDER ROUTING CONFIGURATION - Now loaded from database
+// 'own_patients_only': They cover their OWN patients only - must ask who patient's doctor is
+// 'all_patients': They handle ALL patients (no need to ask who doctor is)
 
 // Office mapping from phone numbers
 const officePhoneMap: Record<string, { officeId: string; officeName: string }> = {
@@ -91,7 +78,59 @@ interface OnCallInfo {
   onCallProvider: { name: string; phone: string };
   afterHoursStart: string;
   afterHoursEnd: string;
-  requiresPatientDoctorConfirmation: boolean; // True if Todd/Vin on-call
+  requiresPatientDoctorConfirmation: boolean; // True if routing_type = 'own_patients_only'
+  providerDirectory: Record<string, { name: string; phone: string }>; // For routing to patient's doctor
+}
+
+// Get provider routing configuration from database
+async function getProviderRoutingConfig(supabase: any, officeId: string): Promise<{
+  routingType: string;
+  providerDirectory: Record<string, { name: string; phone: string }>;
+}> {
+  const { data: configs, error } = await supabase
+    .from('provider_routing_config')
+    .select('*')
+    .eq('office_id', officeId)
+    .eq('is_active', true);
+  
+  if (error || !configs || configs.length === 0) {
+    console.log('No provider routing config found, using defaults');
+    return {
+      routingType: 'all_patients',
+      providerDirectory: {}
+    };
+  }
+  
+  // Build provider directory for routing
+  const providerDirectory: Record<string, { name: string; phone: string }> = {};
+  configs.forEach((config: any) => {
+    const nameLower = config.provider_name.toLowerCase();
+    const phone = config.provider_phone.replace(/[^\d+]/g, '').startsWith('+')
+      ? config.provider_phone.replace(/[^\d+]/g, '')
+      : '+1' + config.provider_phone.replace(/\D/g, '');
+    
+    // Add variations of the name for matching
+    if (nameLower.includes('todd')) {
+      providerDirectory['todd'] = { name: config.provider_name, phone };
+      providerDirectory['shepler'] = { name: config.provider_name, phone };
+    }
+    if (nameLower.includes('vincent') || nameLower.includes('vin')) {
+      providerDirectory['vin'] = { name: config.provider_name, phone };
+      providerDirectory['vincent'] = { name: config.provider_name, phone };
+      providerDirectory['restivo'] = { name: config.provider_name, phone };
+    }
+    if (nameLower.includes('chelsea')) {
+      providerDirectory['chelsea'] = { name: config.provider_name, phone };
+      providerDirectory['devitt'] = { name: config.provider_name, phone };
+    }
+    if (nameLower.includes('nathan') || nameLower.includes('nate')) {
+      providerDirectory['nate'] = { name: config.provider_name, phone };
+      providerDirectory['nathan'] = { name: config.provider_name, phone };
+      providerDirectory['osterman'] = { name: config.provider_name, phone };
+    }
+  });
+  
+  return { routingType: 'from_db', providerDirectory };
 }
 
 // Get on-call info from database
@@ -101,6 +140,7 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
   
   console.log('Looking up on-call for:', { officeId: officeInfo.officeId, date: today });
   
+  // Get on-call assignment
   const { data: assignment, error } = await supabase
     .from('oncall_assignments')
     .select('*')
@@ -108,6 +148,9 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
     .eq('assignment_date', today)
     .eq('status', 'active')
     .single();
+  
+  // Get provider routing config
+  const { providerDirectory } = await getProviderRoutingConfig(supabase, officeInfo.officeId);
   
   if (error || !assignment) {
     console.log('No on-call assignment found, using default');
@@ -118,17 +161,25 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
       afterHoursStart: '17:00',
       afterHoursEnd: '08:00',
       requiresPatientDoctorConfirmation: false,
+      providerDirectory,
     };
   }
   
   console.log('Found on-call assignment:', assignment.provider_name);
   
-  // Check if this provider only covers their own patients
-  const providerNameLower = assignment.provider_name.toLowerCase();
-  const requiresConfirmation = PROVIDERS_OWN_PATIENTS_ONLY.some(p => providerNameLower.includes(p));
+  // Look up routing type for this provider from database
+  const { data: routingConfig } = await supabase
+    .from('provider_routing_config')
+    .select('routing_type')
+    .eq('provider_user_id', assignment.provider_user_id)
+    .eq('is_active', true)
+    .single();
   
-  console.log('Provider routing:', { 
+  const requiresConfirmation = routingConfig?.routing_type === 'own_patients_only';
+  
+  console.log('Provider routing from DB:', { 
     provider: assignment.provider_name, 
+    routingType: routingConfig?.routing_type || 'default',
     requiresPatientDoctorConfirmation: requiresConfirmation 
   });
   
@@ -144,6 +195,7 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
     afterHoursStart: assignment.after_hours_start,
     afterHoursEnd: assignment.after_hours_end,
     requiresPatientDoctorConfirmation: requiresConfirmation,
+    providerDirectory,
   };
 }
 
@@ -345,14 +397,24 @@ serve(async (req) => {
           let routeToProvider = onCallInfo.onCallProvider; // Default to on-call
           
           // Check if patient mentioned Todd
-          if (/todd|shepler/i.test(doctorResponse)) {
-            routeToProvider = PROVIDER_DIRECTORY['todd'];
+          if (/todd|shepler/i.test(doctorResponse) && onCallInfo.providerDirectory['todd']) {
+            routeToProvider = onCallInfo.providerDirectory['todd'];
             console.log('Patient of Dr. Todd - routing to Todd');
           }
           // Check if patient mentioned Vin/Vincent
-          else if (/vin|vincent|restivo/i.test(doctorResponse)) {
-            routeToProvider = PROVIDER_DIRECTORY['vin'];
+          else if (/vin|vincent|restivo/i.test(doctorResponse) && onCallInfo.providerDirectory['vin']) {
+            routeToProvider = onCallInfo.providerDirectory['vin'];
             console.log('Patient of Dr. Vin - routing to Vin');
+          }
+          // Check if patient mentioned Chelsea
+          else if (/chelsea|devitt/i.test(doctorResponse) && onCallInfo.providerDirectory['chelsea']) {
+            routeToProvider = onCallInfo.providerDirectory['chelsea'];
+            console.log('Patient of Dr. Chelsea - routing to Chelsea');
+          }
+          // Check if patient mentioned Nate/Nathan
+          else if (/nate|nathan|osterman/i.test(doctorResponse) && onCallInfo.providerDirectory['nate']) {
+            routeToProvider = onCallInfo.providerDirectory['nate'];
+            console.log('Patient of Dr. Nate - routing to Nate');
           }
           // If unclear or don't know, route to on-call
           else {
