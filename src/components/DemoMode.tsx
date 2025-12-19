@@ -30,15 +30,18 @@ const scenarios = [
     description: 'Patient reports sudden blindness in right eye with floaters - an eye emergency',
     badge: 'destructive' as const,
     icon: AlertTriangle,
-    outcome: 'OUTCOME: Doctor will call you back shortly',
-    outcomeDetail: 'The on-call doctor received your information and will contact you within minutes.',
+    outcome: 'The on-call clinician will call you back shortly.',
+    outcomeDetail: 'Your information has been delivered to the on-call doctor who will contact you within minutes.',
     doctorContacted: true,
+    reassurance: 'Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately.',
     steps: [
+      'AI: "I\'ll collect a few details and make sure this is handled appropriately."',
       'AI: "What symptoms are you experiencing?"',
       'Patient: "I suddenly can\'t see out of my right eye, and I see floaters"',
       '🔴 AI detects EYE RED FLAG: sudden vision loss + floaters',
-      '📋 Summary SMS delivered to on-call doctor',
-      '📞 Doctor contacted - expect a call back shortly'
+      'AI: "Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately."',
+      '📋 Summary delivered to on-call doctor',
+      '✅ OUTCOME: The on-call clinician will call you back shortly.'
     ]
   },
   {
@@ -47,16 +50,20 @@ const scenarios = [
     description: 'Patient had cataract surgery 3 days ago, experiencing moderate pain',
     badge: 'secondary' as const,
     icon: Clock,
-    outcome: 'OUTCOME: Doctor will call you back shortly',
-    outcomeDetail: 'The on-call doctor received your information and will contact you soon.',
+    outcome: 'The on-call clinician will call you back shortly.',
+    outcomeDetail: 'Your information has been delivered to the on-call doctor who will contact you soon.',
     doctorContacted: true,
+    reassurance: 'Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately.',
     steps: [
+      'AI: "I\'ll collect a few details and make sure this is handled appropriately."',
       'AI: "Have you had eye surgery recently?"',
       'Patient: "Yes, cataract surgery 3 days ago"',
       'AI: "What symptoms are you experiencing?"',
       'Patient: "Moderate pain and some redness"',
       '🟡 AI classifies: URGENT - post-operative concern',
-      '📋 Summary delivered → Doctor notified'
+      'AI: "Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately."',
+      '📋 Summary delivered → Doctor notified',
+      '✅ OUTCOME: The on-call clinician will call you back shortly.'
     ]
   },
   {
@@ -65,16 +72,20 @@ const scenarios = [
     description: 'Patient has mild eye irritation and dryness for past week - stable symptoms',
     badge: 'outline' as const,
     icon: Voicemail,
-    outcome: 'OUTCOME: Reviewed next business day',
+    outcome: 'This will be reviewed the next business day.',
     outcomeDetail: 'Your message will be reviewed by the office when they open. Call back or go to the ER if symptoms worsen.',
     doctorContacted: false,
+    reassurance: 'Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately.',
     steps: [
+      'AI: "I\'ll collect a few details and make sure this is handled appropriately."',
       'AI: "What symptoms are you experiencing?"',
       'Patient: "My eyes have been dry and a little irritated"',
       'AI: "Is this getting worse or staying the same?"',
       'Patient: "About the same for a week"',
       '⚪ AI classifies: NON-URGENT - stable mild symptoms',
-      '📝 Voicemail recorded for next business day'
+      'AI: "Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately."',
+      '📝 Voicemail recorded for next business day',
+      '✅ OUTCOME: This will be reviewed the next business day.'
     ]
   }
 ];
