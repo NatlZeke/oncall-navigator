@@ -19,8 +19,10 @@ import { Switch } from '@/components/ui/switch';
 import { SwapRequestDialog } from '@/components/SwapRequestDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2, History } from 'lucide-react';
-import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay, isWeekend } from 'date-fns';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2, History, Filter, X } from 'lucide-react';
+import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay, isWeekend, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -74,6 +76,9 @@ const AfterHoursSchedulePage = () => {
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [auditFilterAction, setAuditFilterAction] = useState<string>('all');
+  const [auditFilterDateFrom, setAuditFilterDateFrom] = useState<Date | undefined>(subDays(new Date(), 30));
+  const [auditFilterDateTo, setAuditFilterDateTo] = useState<Date | undefined>(new Date());
   const [settings, setSettings] = useState<AfterHoursSettings>({
     enabled: true,
     weekdayStart: '17:00',
@@ -89,9 +94,14 @@ const AfterHoursSchedulePage = () => {
     if (currentOffice) {
       fetchAssignments();
       fetchSwapRequests();
-      fetchAuditLogs();
     }
   }, [currentOffice, currentDate]);
+
+  useEffect(() => {
+    if (currentOffice) {
+      fetchAuditLogs();
+    }
+  }, [currentOffice, auditFilterAction, auditFilterDateFrom, auditFilterDateTo]);
 
   const fetchAssignments = async () => {
     if (!currentOffice) return;
@@ -135,12 +145,26 @@ const AfterHoursSchedulePage = () => {
     if (!currentOffice) return;
     
     setLoadingLogs(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('oncall_assignment_audit_logs')
       .select('*')
       .eq('office_id', currentOffice.id)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(100);
+
+    if (auditFilterAction && auditFilterAction !== 'all') {
+      query = query.eq('action', auditFilterAction);
+    }
+
+    if (auditFilterDateFrom) {
+      query = query.gte('created_at', format(auditFilterDateFrom, 'yyyy-MM-dd'));
+    }
+
+    if (auditFilterDateTo) {
+      query = query.lte('created_at', format(addDays(auditFilterDateTo, 1), 'yyyy-MM-dd'));
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching audit logs:', error);
@@ -734,7 +758,82 @@ const AfterHoursSchedulePage = () => {
                   Recent changes to on-call assignments
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Filters */}
+                <div className="flex flex-wrap gap-3 items-center p-3 rounded-lg bg-muted/50 border">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Filters:</span>
+                  </div>
+                  
+                  {/* Action Type Filter */}
+                  <Select value={auditFilterAction} onValueChange={setAuditFilterAction}>
+                    <SelectTrigger className="w-[160px] h-8">
+                      <SelectValue placeholder="Action type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Actions</SelectItem>
+                      <SelectItem value="create">Created</SelectItem>
+                      <SelectItem value="update">Updated</SelectItem>
+                      <SelectItem value="bulk_create">Bulk Created</SelectItem>
+                      <SelectItem value="bulk_update">Bulk Updated</SelectItem>
+                      <SelectItem value="swap_approved">Swap Approved</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Date From */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 gap-2">
+                        <Calendar className="h-3 w-3" />
+                        {auditFilterDateFrom ? format(auditFilterDateFrom, 'MMM d, yyyy') : 'From'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={auditFilterDateFrom}
+                        onSelect={setAuditFilterDateFrom}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* Date To */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 gap-2">
+                        <Calendar className="h-3 w-3" />
+                        {auditFilterDateTo ? format(auditFilterDateTo, 'MMM d, yyyy') : 'To'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={auditFilterDateTo}
+                        onSelect={setAuditFilterDateTo}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* Clear Filters */}
+                  {(auditFilterAction !== 'all' || auditFilterDateFrom || auditFilterDateTo) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1"
+                      onClick={() => {
+                        setAuditFilterAction('all');
+                        setAuditFilterDateFrom(subDays(new Date(), 30));
+                        setAuditFilterDateTo(new Date());
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
                 {loadingLogs ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
