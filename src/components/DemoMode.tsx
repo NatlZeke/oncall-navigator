@@ -30,14 +30,15 @@ const scenarios = [
     description: 'Patient reports sudden blindness in right eye with floaters - an eye emergency',
     badge: 'destructive' as const,
     icon: AlertTriangle,
-    outcome: '✓ DOCTOR CONTACTED - Immediate escalation with pre-call summary',
+    outcome: 'OUTCOME: Doctor will call you back shortly',
+    outcomeDetail: 'The on-call doctor received your information and will contact you within minutes.',
     doctorContacted: true,
     steps: [
       'AI: "What symptoms are you experiencing?"',
       'Patient: "I suddenly can\'t see out of my right eye, and I see floaters"',
       '🔴 AI detects EYE RED FLAG: sudden vision loss + floaters',
       '📋 Summary SMS delivered to on-call doctor',
-      '📞 Call connected to Dr. Restivo'
+      '📞 Doctor contacted - expect a call back shortly'
     ]
   },
   {
@@ -46,7 +47,8 @@ const scenarios = [
     description: 'Patient had cataract surgery 3 days ago, experiencing moderate pain',
     badge: 'secondary' as const,
     icon: Clock,
-    outcome: '✓ DOCTOR CONTACTED - Escalation with structured summary',
+    outcome: 'OUTCOME: Doctor will call you back shortly',
+    outcomeDetail: 'The on-call doctor received your information and will contact you soon.',
     doctorContacted: true,
     steps: [
       'AI: "Have you had eye surgery recently?"',
@@ -54,7 +56,7 @@ const scenarios = [
       'AI: "What symptoms are you experiencing?"',
       'Patient: "Moderate pain and some redness"',
       '🟡 AI classifies: URGENT - post-operative concern',
-      '📋 Summary SMS delivered → 📞 Call connected'
+      '📋 Summary delivered → Doctor notified'
     ]
   },
   {
@@ -63,15 +65,16 @@ const scenarios = [
     description: 'Patient has mild eye irritation and dryness for past week - stable symptoms',
     badge: 'outline' as const,
     icon: Voicemail,
-    outcome: '✗ NO DOCTOR WAKE-UP - Voicemail recorded for business hours',
+    outcome: 'OUTCOME: Reviewed next business day',
+    outcomeDetail: 'Your message will be reviewed by the office when they open. Call back or go to the ER if symptoms worsen.',
     doctorContacted: false,
     steps: [
       'AI: "What symptoms are you experiencing?"',
       'Patient: "My eyes have been dry and a little irritated"',
       'AI: "Is this getting worse or staying the same?"',
       'Patient: "About the same for a week"',
-      '⚪ AI classifies: NON-URGENT - stable mild symptoms, no red flags',
-      '📝 Voicemail recorded → Doctor NOT contacted'
+      '⚪ AI classifies: NON-URGENT - stable mild symptoms',
+      '📝 Voicemail recorded for next business day'
     ]
   }
 ];
@@ -198,27 +201,36 @@ export function DemoMode() {
               ))}
             </div>
 
-            {/* Outcome */}
+            {/* Outcome - Clear Patient-Facing Message */}
             {currentStep >= (selectedScenario?.steps.length || 0) && (
               <div className={`p-4 rounded-lg border-2 ${
                 selectedScenario?.doctorContacted 
                   ? 'bg-success/10 border-success' 
-                  : 'bg-muted/50 border-muted'
+                  : 'bg-primary/10 border-primary'
               }`}>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-2">
                   {selectedScenario?.doctorContacted ? (
                     <>
                       <UserCheck className="h-5 w-5 text-success" />
-                      <span className="font-medium text-success">Doctor Contacted</span>
+                      <span className="font-bold text-success">{selectedScenario?.outcome}</span>
                     </>
                   ) : (
                     <>
-                      <Voicemail className="h-5 w-5 text-muted-foreground" />
-                      <span className="font-medium">No Doctor Wake-Up</span>
+                      <Clock className="h-5 w-5 text-primary" />
+                      <span className="font-bold text-primary">{selectedScenario?.outcome}</span>
                     </>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground">{selectedScenario?.outcome}</p>
+                <p className="text-sm text-muted-foreground">{selectedScenario?.outcomeDetail}</p>
+                
+                {/* Safety Message - Always Shown */}
+                <div className="mt-3 p-3 rounded bg-warning/10 border border-warning/30">
+                  <p className="text-xs font-medium text-warning">Safety Message (Always Delivered):</p>
+                  <p className="text-xs text-muted-foreground mt-1 italic">
+                    "If your symptoms worsen, or you experience sudden vision loss, severe pain, 
+                    or a curtain in your vision, please go immediately to the nearest emergency room."
+                  </p>
+                </div>
               </div>
             )}
           </div>
