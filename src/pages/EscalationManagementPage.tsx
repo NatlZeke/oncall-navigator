@@ -32,9 +32,11 @@ import { IncidentEscalation, EscalationSeverity } from '@/types';
 import { ProviderAcknowledgePanel } from '@/components/ProviderAcknowledgePanel';
 import { EscalationTimeline } from '@/components/EscalationTimeline';
 import { mockEscalationEvents } from '@/data/phase4MockData';
+import type { AckType } from '@/types/phase4';
+import { PhysicianGuaranteeCard } from '@/components/PhysicianGuaranteeCard';
+import { EscalationStatusCard } from '@/components/EscalationStatusCard';
 import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
 import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
-import type { AckType } from '@/types/phase4';
 
 const severityColors: Record<EscalationSeverity, string> = {
   emergent: 'bg-red-500/20 text-red-700 border-red-500/30',
@@ -221,7 +223,7 @@ const EscalationManagementPage = () => {
           </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2 bg-red-600 hover:bg-red-700">
+              <Button className="gap-2 bg-destructive hover:bg-destructive/90">
                 <AlertTriangle className="h-4 w-4" />
                 Start Escalation
               </Button>
@@ -254,13 +256,13 @@ const EscalationManagementPage = () => {
                     <SelectContent>
                       <SelectItem value="emergent">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-red-500" />
+                          <div className="w-2 h-2 rounded-full bg-destructive" />
                           Emergent (immediate response needed)
                         </div>
                       </SelectItem>
                       <SelectItem value="urgent">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-amber-500" />
+                          <div className="w-2 h-2 rounded-full bg-warning" />
                           Urgent (response within 30 min)
                         </div>
                       </SelectItem>
@@ -275,13 +277,16 @@ const EscalationManagementPage = () => {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleCreateEscalation} className="bg-red-600 hover:bg-red-700">
+                <Button onClick={handleCreateEscalation} className="bg-destructive hover:bg-destructive/90">
                   Start Escalation
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Physician Guarantee - Always Visible */}
+        <PhysicianGuaranteeCard persistent />
 
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-4">
