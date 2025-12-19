@@ -273,6 +273,42 @@ export type Database = {
         }
         Relationships: []
       }
+      oncall_assignment_audit_logs: {
+        Row: {
+          action: string
+          assignment_date: string
+          changed_by_user_id: string | null
+          created_at: string
+          id: string
+          new_values: Json | null
+          office_id: string
+          oncall_assignment_id: string
+          previous_values: Json | null
+        }
+        Insert: {
+          action: string
+          assignment_date: string
+          changed_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          office_id: string
+          oncall_assignment_id: string
+          previous_values?: Json | null
+        }
+        Update: {
+          action?: string
+          assignment_date?: string
+          changed_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          office_id?: string
+          oncall_assignment_id?: string
+          previous_values?: Json | null
+        }
+        Relationships: []
+      }
       oncall_assignments: {
         Row: {
           after_hours_end: string
