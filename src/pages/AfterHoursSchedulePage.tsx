@@ -17,10 +17,24 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SwapRequestDialog } from '@/components/SwapRequestDialog';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2, History } from 'lucide-react';
 import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay, isWeekend } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+interface AuditLog {
+  id: string;
+  oncall_assignment_id: string;
+  office_id: string;
+  action: string;
+  assignment_date: string;
+  previous_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  changed_by_user_id: string | null;
+  created_at: string;
+}
 
 interface OnCallAssignment {
   id: string;
@@ -58,6 +72,8 @@ const AfterHoursSchedulePage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedAssignment, setSelectedAssignment] = useState<OnCallAssignment | null>(null);
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
   const [settings, setSettings] = useState<AfterHoursSettings>({
     enabled: true,
     weekdayStart: '17:00',
@@ -73,6 +89,7 @@ const AfterHoursSchedulePage = () => {
     if (currentOffice) {
       fetchAssignments();
       fetchSwapRequests();
+      fetchAuditLogs();
     }
   }, [currentOffice, currentDate]);
 
@@ -114,6 +131,46 @@ const AfterHoursSchedulePage = () => {
     }
   };
 
+  const fetchAuditLogs = async () => {
+    if (!currentOffice) return;
+    
+    setLoadingLogs(true);
+    const { data, error } = await supabase
+      .from('oncall_assignment_audit_logs')
+      .select('*')
+      .eq('office_id', currentOffice.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error('Error fetching audit logs:', error);
+    } else {
+      setAuditLogs((data as AuditLog[]) || []);
+    }
+    setLoadingLogs(false);
+  };
+
+  const logAuditChange = async (
+    assignmentId: string,
+    action: string,
+    assignmentDate: string,
+    previousValues: Record<string, unknown> | null,
+    newValues: Record<string, unknown> | null
+  ) => {
+    if (!currentOffice) return;
+
+    await supabase.from('oncall_assignment_audit_logs').insert({
+      oncall_assignment_id: assignmentId,
+      office_id: currentOffice.id,
+      action,
+      assignment_date: assignmentDate,
+      previous_values: previousValues as unknown as Record<string, never>,
+      new_values: newValues as unknown as Record<string, never>,
+    } as never);
+
+    fetchAuditLogs();
+  };
+
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
@@ -136,6 +193,11 @@ const AfterHoursSchedulePage = () => {
     const existingAssignment = getAssignmentForDay(date);
 
     if (existingAssignment) {
+      const previousValues = {
+        provider_name: existingAssignment.provider_name,
+        provider_phone: existingAssignment.provider_phone,
+      };
+      
       // Update existing
       const { error } = await supabase
         .from('oncall_assignments')
@@ -150,9 +212,17 @@ const AfterHoursSchedulePage = () => {
         toast.error('Failed to update assignment');
         return;
       }
+
+      await logAuditChange(
+        existingAssignment.id,
+        'update',
+        dateKey,
+        previousValues,
+        { provider_name: provider.full_name, provider_phone: provider.phone_mobile }
+      );
     } else {
       // Create new
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('oncall_assignments')
         .insert({
           office_id: currentOffice.id,
@@ -160,11 +230,23 @@ const AfterHoursSchedulePage = () => {
           provider_user_id: provider.id,
           provider_name: provider.full_name,
           provider_phone: provider.phone_mobile,
-        });
+        })
+        .select()
+        .single();
 
       if (error) {
         toast.error('Failed to create assignment');
         return;
+      }
+
+      if (data) {
+        await logAuditChange(
+          data.id,
+          'create',
+          dateKey,
+          null,
+          { provider_name: provider.full_name, provider_phone: provider.phone_mobile }
+        );
       }
     }
 
@@ -184,6 +266,10 @@ const AfterHoursSchedulePage = () => {
 
     if (assignment && request.target_user_name) {
       const targetProvider = providers.find(p => p.full_name === request.target_user_name);
+      const previousValues = {
+        provider_name: assignment.provider_name,
+        provider_phone: assignment.provider_phone,
+      };
       
       const { error: updateError } = await supabase
         .from('oncall_assignments')
@@ -198,6 +284,14 @@ const AfterHoursSchedulePage = () => {
         toast.error('Failed to update assignment');
         return;
       }
+
+      await logAuditChange(
+        assignment.id,
+        'swap_approved',
+        request.swap_date,
+        previousValues,
+        { provider_name: request.target_user_name, provider_phone: targetProvider?.phone_mobile || assignment.provider_phone }
+      );
     }
 
     const { error } = await supabase
@@ -243,6 +337,11 @@ const AfterHoursSchedulePage = () => {
       const existing = getAssignmentForDay(day);
 
       if (existing) {
+        const previousValues = {
+          provider_name: existing.provider_name,
+          provider_phone: existing.provider_phone,
+        };
+        
         await supabase
           .from('oncall_assignments')
           .update({
@@ -251,8 +350,16 @@ const AfterHoursSchedulePage = () => {
             provider_phone: provider.phone_mobile,
           })
           .eq('id', existing.id);
+
+        await logAuditChange(
+          existing.id,
+          'bulk_update',
+          dateKey,
+          previousValues,
+          { provider_name: provider.full_name, provider_phone: provider.phone_mobile }
+        );
       } else {
-        await supabase
+        const { data } = await supabase
           .from('oncall_assignments')
           .insert({
             office_id: currentOffice.id,
@@ -260,7 +367,19 @@ const AfterHoursSchedulePage = () => {
             provider_user_id: provider.id,
             provider_name: provider.full_name,
             provider_phone: provider.phone_mobile,
-          });
+          })
+          .select()
+          .single();
+
+        if (data) {
+          await logAuditChange(
+            data.id,
+            'bulk_create',
+            dateKey,
+            null,
+            { provider_name: provider.full_name, provider_phone: provider.phone_mobile }
+          );
+        }
       }
     }
 
@@ -268,6 +387,32 @@ const AfterHoursSchedulePage = () => {
       description: `${provider.full_name} is now on-call for the entire week.`
     });
     fetchAssignments();
+  };
+
+  const formatAuditChanges = (log: AuditLog): string => {
+    const changes: string[] = [];
+    if (log.previous_values && log.new_values) {
+      const prev = log.previous_values as Record<string, string>;
+      const next = log.new_values as Record<string, string>;
+      if (prev.provider_name !== next.provider_name) {
+        changes.push(`${prev.provider_name?.split(',')[0] || 'Unassigned'} → ${next.provider_name?.split(',')[0]}`);
+      }
+    } else if (log.new_values) {
+      const next = log.new_values as Record<string, string>;
+      changes.push(`Assigned: ${next.provider_name?.split(',')[0]}`);
+    }
+    return changes.join(', ') || 'No details';
+  };
+
+  const getActionLabel = (action: string): string => {
+    switch (action) {
+      case 'create': return 'Created';
+      case 'update': return 'Updated';
+      case 'bulk_create': return 'Bulk Created';
+      case 'bulk_update': return 'Bulk Updated';
+      case 'swap_approved': return 'Swap Approved';
+      default: return action;
+    }
   };
 
   return (
@@ -283,6 +428,20 @@ const AfterHoursSchedulePage = () => {
           </div>
           {loading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
         </div>
+
+        <Tabs defaultValue="schedule" className="w-full">
+          <TabsList>
+            <TabsTrigger value="schedule" className="gap-2">
+              <Calendar className="h-4 w-4" />
+              Schedule
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="gap-2">
+              <History className="h-4 w-4" />
+              Audit Log
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="schedule" className="space-y-6 mt-6">
 
         {/* Pending Swap Requests */}
         {swapRequests.length > 0 && (
@@ -562,6 +721,62 @@ const AfterHoursSchedulePage = () => {
             <span>Pending swap request</span>
           </div>
         </div>
+          </TabsContent>
+
+          <TabsContent value="audit" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="h-5 w-5" />
+                  Assignment Change History
+                </CardTitle>
+                <CardDescription>
+                  Recent changes to on-call assignments
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingLogs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : auditLogs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No audit logs found
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date/Time</TableHead>
+                        <TableHead>Assignment Date</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Changes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditLogs.map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-sm">
+                            {format(new Date(log.created_at), 'MMM d, yyyy HH:mm')}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {format(new Date(log.assignment_date), 'MMM d, yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{getActionLabel(log.action)}</Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {formatAuditChanges(log)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Swap Dialog */}
         {selectedAssignment && (
