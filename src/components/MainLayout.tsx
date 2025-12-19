@@ -1,7 +1,8 @@
 import { ReactNode, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -82,8 +83,15 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
 
 export function MainLayout({ children }: { children: ReactNode }) {
   const { currentUser, isCompanyLevel } = useApp();
+  const { user, profile, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
 
   // Company navigation - grouped
   const companyNavGroups = [
@@ -176,11 +184,13 @@ export function MainLayout({ children }: { children: ReactNode }) {
     return currentItem?.label || 'Page';
   }, [allNavItems, location.pathname]);
 
-  const initials = currentUser?.full_name
-    ?.split(' ')
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || currentUser?.full_name;
+  const displayEmail = profile?.email || user?.email || currentUser?.email;
+  const initials = (displayName || 'U')
+    .split(' ')
     .map((n) => n[0])
     .join('')
-    .toUpperCase() || 'U';
+    .toUpperCase();
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -238,10 +248,16 @@ export function MainLayout({ children }: { children: ReactNode }) {
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{currentUser?.full_name}</p>
-              <p className="text-xs text-muted-foreground truncate">{currentUser?.email}</p>
+              <p className="text-sm font-medium truncate">{displayName}</p>
+              <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
             </div>
-            <Button variant="ghost" size="icon" className="shrink-0">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="shrink-0"
+              onClick={handleSignOut}
+              title="Sign out"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

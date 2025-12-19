@@ -446,6 +446,39 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          office_id: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          office_id?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          office_id?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       provider_acknowledgements: {
         Row: {
           ack_time: string
@@ -664,12 +697,64 @@ export type Database = {
         }
         Relationships: []
       }
+      user_offices: {
+        Row: {
+          created_at: string
+          id: string
+          office_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          office_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          office_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       ack_type:
@@ -678,6 +763,7 @@ export type Database = {
         | "advised_er"
         | "resolved"
         | "handed_off"
+      app_role: "admin" | "manager" | "provider" | "operator"
       escalation_event_type:
         | "initiated"
         | "notified_tier1"
@@ -829,6 +915,7 @@ export const Constants = {
         "resolved",
         "handed_off",
       ],
+      app_role: ["admin", "manager", "provider", "operator"],
       escalation_event_type: [
         "initiated",
         "notified_tier1",
