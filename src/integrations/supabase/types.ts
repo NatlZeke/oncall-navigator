@@ -443,6 +443,44 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_routing_audit_logs: {
+        Row: {
+          action: string
+          changed_by_user_id: string | null
+          created_at: string
+          id: string
+          new_values: Json | null
+          previous_values: Json | null
+          provider_routing_config_id: string
+        }
+        Insert: {
+          action: string
+          changed_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          previous_values?: Json | null
+          provider_routing_config_id: string
+        }
+        Update: {
+          action?: string
+          changed_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          previous_values?: Json | null
+          provider_routing_config_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_routing_audit_logs_provider_routing_config_id_fkey"
+            columns: ["provider_routing_config_id"]
+            isOneToOne: false
+            referencedRelation: "provider_routing_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       provider_routing_config: {
         Row: {
           created_at: string
