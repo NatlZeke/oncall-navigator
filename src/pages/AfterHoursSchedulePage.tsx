@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2, History, Filter, X } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Clock, Phone, User, Save, ArrowRightLeft, Loader2, History, Filter, X, Download } from 'lucide-react';
 import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay, isWeekend, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -439,6 +439,43 @@ const AfterHoursSchedulePage = () => {
     }
   };
 
+  const exportAuditLogsToCSV = () => {
+    if (auditLogs.length === 0) {
+      toast.error('No audit logs to export');
+      return;
+    }
+
+    const headers = ['Date/Time', 'Assignment Date', 'Action', 'Previous Provider', 'New Provider'];
+    
+    const rows = auditLogs.map((log) => {
+      const prevProvider = (log.previous_values as Record<string, string>)?.provider_name?.split(',')[0] || '';
+      const newProvider = (log.new_values as Record<string, string>)?.provider_name?.split(',')[0] || '';
+      
+      return [
+        format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss'),
+        format(new Date(log.assignment_date), 'yyyy-MM-dd'),
+        getActionLabel(log.action),
+        prevProvider,
+        newProvider,
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `oncall-audit-logs-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success('Audit logs exported', {
+      description: `${auditLogs.length} records exported to CSV`
+    });
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
@@ -833,6 +870,20 @@ const AfterHoursSchedulePage = () => {
                       Clear
                     </Button>
                   )}
+
+                  <div className="flex-1" />
+
+                  {/* Export Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2"
+                    onClick={exportAuditLogsToCSV}
+                    disabled={auditLogs.length === 0 || loadingLogs}
+                  >
+                    <Download className="h-3 w-3" />
+                    Export CSV
+                  </Button>
                 </div>
                 {loadingLogs ? (
                   <div className="flex items-center justify-center py-8">
