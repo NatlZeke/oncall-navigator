@@ -936,7 +936,7 @@ function generateWelcomeResponse(officeName: string, baseUrl: string): string {
   <Pause length="1"/>
   <Say voice="Polly.Joanna-Neural">If this is an emergency, please hang up and dial 911.</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Please state your name.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -946,7 +946,7 @@ function generateWelcomeResponse(officeName: string, baseUrl: string): string {
 function generateCollectNameResponse(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">I didn't catch that. Please state your name.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -957,7 +957,7 @@ function generateEstablishedPatientQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Are you an established patient with our office?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -968,7 +968,7 @@ function generateRecentSurgeryQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Have you had eye surgery recently?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -979,7 +979,7 @@ function generateVisionLossQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Are you experiencing vision loss or sudden vision changes?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -990,7 +990,7 @@ function generateEyePainQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Are you experiencing eye pain? If yes, is it mild, moderate, or severe?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1001,7 +1001,7 @@ function generateFlashesFloatersQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Do you see flashes, floaters, or a curtain or shadow in your vision?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1012,7 +1012,7 @@ function generateTraumaQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Have you had any trauma to your eye or chemical exposure?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1023,7 +1023,7 @@ function generateGeneralComplaintQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="6" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Please briefly describe what's going on with your eyes.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1078,7 +1078,7 @@ function generatePrescriptionIntro(baseUrl: string): string {
   <Pause length="1"/>
   <Say voice="Polly.Joanna-Neural">I'll take a message and make sure it's reviewed by the office on the next business day.</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">What is your date of birth?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1088,7 +1088,7 @@ function generatePrescriptionIntro(baseUrl: string): string {
 function generatePrescriptionDOBQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">I didn't catch that. What is your date of birth?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1099,7 +1099,7 @@ function generatePrescriptionCallbackQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">What is the best callback number?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1110,7 +1110,7 @@ function generatePrescriptionMedicationQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">What medication are you requesting, if you know the name?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1122,7 +1122,7 @@ function generatePrescriptionSafetyCheck(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Just to confirm. Are you having sudden vision loss, severe eye pain, or injury to the eye right now?</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1146,7 +1146,7 @@ function generateAskPatientDoctorQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech" timeout="5" speechTimeout="auto" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+  <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
     <Say voice="Polly.Joanna-Neural">Who is your regular doctor at our practice? For example, Doctor Todd, Doctor Vin, or Doctor Chelsea.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
