@@ -234,6 +234,102 @@ export type Database = {
         }
         Relationships: []
       }
+      escalations: {
+        Row: {
+          ack_type: string | null
+          acknowledged_at: string | null
+          assigned_provider_name: string | null
+          assigned_provider_phone: string | null
+          assigned_provider_user_id: string | null
+          call_sid: string | null
+          callback_completed_at: string | null
+          callback_initiated_at: string | null
+          callback_number: string
+          conversation_id: string | null
+          created_at: string
+          current_tier: number
+          date_of_birth: string | null
+          has_recent_surgery: boolean | null
+          id: string
+          is_established_patient: boolean | null
+          office_id: string
+          patient_name: string | null
+          primary_complaint: string | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          sla_target_minutes: number
+          sla_warning_minutes: number
+          status: string
+          structured_summary: Json
+          summary_sent_at: string | null
+          symptoms: Json | null
+          triage_level: string
+          updated_at: string
+        }
+        Insert: {
+          ack_type?: string | null
+          acknowledged_at?: string | null
+          assigned_provider_name?: string | null
+          assigned_provider_phone?: string | null
+          assigned_provider_user_id?: string | null
+          call_sid?: string | null
+          callback_completed_at?: string | null
+          callback_initiated_at?: string | null
+          callback_number: string
+          conversation_id?: string | null
+          created_at?: string
+          current_tier?: number
+          date_of_birth?: string | null
+          has_recent_surgery?: boolean | null
+          id?: string
+          is_established_patient?: boolean | null
+          office_id: string
+          patient_name?: string | null
+          primary_complaint?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          sla_target_minutes?: number
+          sla_warning_minutes?: number
+          status?: string
+          structured_summary?: Json
+          summary_sent_at?: string | null
+          symptoms?: Json | null
+          triage_level: string
+          updated_at?: string
+        }
+        Update: {
+          ack_type?: string | null
+          acknowledged_at?: string | null
+          assigned_provider_name?: string | null
+          assigned_provider_phone?: string | null
+          assigned_provider_user_id?: string | null
+          call_sid?: string | null
+          callback_completed_at?: string | null
+          callback_initiated_at?: string | null
+          callback_number?: string
+          conversation_id?: string | null
+          created_at?: string
+          current_tier?: number
+          date_of_birth?: string | null
+          has_recent_surgery?: boolean | null
+          id?: string
+          is_established_patient?: boolean | null
+          office_id?: string
+          patient_name?: string | null
+          primary_complaint?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          sla_target_minutes?: number
+          sla_warning_minutes?: number
+          status?: string
+          structured_summary?: Json
+          summary_sent_at?: string | null
+          symptoms?: Json | null
+          triage_level?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       evidence_exports: {
         Row: {
           company_id: string
@@ -884,6 +980,10 @@ export type Database = {
         | "acknowledged"
         | "resolved"
         | "canceled"
+        | "callback_initiated"
+        | "callback_completed"
+        | "callback_failed"
+        | "summary_sent"
       evidence_type:
         | "audit_logs"
         | "access_review"
@@ -1036,6 +1136,10 @@ export const Constants = {
         "acknowledged",
         "resolved",
         "canceled",
+        "callback_initiated",
+        "callback_completed",
+        "callback_failed",
+        "summary_sent",
       ],
       evidence_type: [
         "audit_logs",

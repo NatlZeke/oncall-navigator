@@ -908,21 +908,69 @@ async function handleEscalation(
     provider: providerName
   }, 'connecting', { workflow_step: 3 });
 
-  const urgencyMsg = level === 'emergent' 
-    ? "Connecting you to the on-call doctor now for your emergency."
-    : "Connecting you to the on-call physician for your concern.";
+  // CALLBACK MODEL: Create escalation record, patient hangs up, doctor calls back
+  // This prevents patient from waiting on hold
+  
+  // Create escalation record in database
+  const { data: escalationRecord, error: escalationError } = await supabase
+    .from('escalations')
+    .insert({
+      office_id: 'hill-country-eye',
+      call_sid: callSid,
+      patient_name: intakeData.patientName,
+      callback_number: intakeData.callbackNumber || callerPhone,
+      date_of_birth: intakeData.dateOfBirth,
+      triage_level: level,
+      is_established_patient: intakeData.isEstablishedPatient,
+      has_recent_surgery: intakeData.hasRecentSurgery,
+      primary_complaint: intakeData.primaryComplaint,
+      symptoms: intakeData.symptoms,
+      structured_summary: summary,
+      summary_sent_at: new Date().toISOString(),
+      assigned_provider_name: providerName,
+      assigned_provider_phone: providerPhone,
+      current_tier: 1,
+      status: 'pending',
+      sla_target_minutes: level === 'emergent' ? 15 : 30
+    })
+    .select()
+    .single();
+
+  if (escalationError) {
+    console.error('Error creating escalation:', escalationError);
+  } else {
+    // Log escalation event
+    await supabase.from('escalation_events').insert({
+      escalation_id: escalationRecord.id,
+      event_type: 'initiated',
+      payload: { 
+        triage_level: level, 
+        provider: providerName,
+        call_sid: callSid
+      }
+    });
+
+    // Log summary sent event
+    await supabase.from('escalation_events').insert({
+      escalation_id: escalationRecord.id,
+      event_type: 'summary_sent',
+      payload: { summary, sent_at: new Date().toISOString() }
+    });
+  }
 
   // Log safety message delivery
   await logSafetyMessageDelivered(supabase, callSid, callerPhone);
 
+  // Patient message - CALLBACK MODEL (no hold)
+  const patientMessage = level === 'emergent'
+    ? "Thank you. I'm sending your summary to the on-call clinician now. This is urgent, so please keep your phone nearby. They will call you shortly. If your symptoms worsen before then, go directly to the emergency room."
+    : "Thank you. I'm sending your summary to the on-call clinician now. Please keep your phone nearby. They will call you shortly. If your symptoms worsen or you experience sudden vision loss, severe pain, or a curtain in your vision, go to the ER or call 911.";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna-Neural">${urgencyMsg}</Say>
+  <Say voice="Polly.Joanna-Neural">${patientMessage}</Say>
   <Pause length="1"/>
-  <Dial callerId="${calledPhone}" timeout="30">
-    <Number>${providerPhone}</Number>
-  </Dial>
-  <Say voice="Polly.Joanna-Neural">Unable to reach the doctor. ${SAFETY_NET_MESSAGE}</Say>
+  <Say voice="Polly.Joanna-Neural">Goodbye.</Say>
   <Hangup/>
 </Response>`;
 }
