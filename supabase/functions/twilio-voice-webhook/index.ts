@@ -30,12 +30,19 @@ async function validateTwilioSignature(
   // Ensure HTTPS (Twilio always calls HTTPS)
   fullUrl = fullUrl.replace('http://', 'https://');
 
-  // IMPORTANT: Twilio does NOT sort parameters - they must be appended in the exact order received
-  // The signature is calculated using parameters in the order they appear in the POST body
-  let data = fullUrl;
+  // Twilio requires parameters to be sorted alphabetically by key
+  // Collect all params and sort by key name
+  const params: Record<string, string> = {};
   formData.forEach((value, key) => {
-    data += key + value.toString();
+    params[key] = value.toString();
   });
+  
+  // Sort keys alphabetically and build the data string
+  const sortedKeys = Object.keys(params).sort();
+  let data = fullUrl;
+  for (const key of sortedKeys) {
+    data += key + params[key];
+  }
 
   // Calculate HMAC-SHA1
   const encoder = new TextEncoder();
@@ -55,7 +62,11 @@ async function validateTwilioSignature(
     console.error('Invalid Twilio signature', { 
       received: signature, 
       calculated: calculatedSignature,
-      url: fullUrl 
+      url: fullUrl,
+      sortedKeys: sortedKeys,
+      dataLength: data.length,
+      // Log first 500 chars of data for debugging
+      dataPreview: data.substring(0, 500)
     });
   }
   
