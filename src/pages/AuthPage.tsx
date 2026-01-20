@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,42 +7,49 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Phone, ArrowLeft, Loader2 } from 'lucide-react';
+import { Phone, ArrowLeft, Loader2, KeyRound } from 'lucide-react';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
 
-type AuthView = 'main' | 'forgot-password';
+type AuthView = 'main' | 'forgot-password' | 'reset-password';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; confirmPassword?: string }>({});
   const [view, setView] = useState<AuthView>('main');
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [authMessage, setAuthMessage] = useState('');
 
   useEffect(() => {
-    // Check if already authenticated
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+    // Listen for auth state changes - this catches the PASSWORD_RECOVERY event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event);
+      
+      if (event === 'PASSWORD_RECOVERY') {
+        // User clicked the reset link - show password reset form
+        setView('reset-password');
+      } else if (event === 'SIGNED_IN' && view !== 'reset-password') {
+        // Normal sign in - redirect to home
         navigate('/');
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        navigate('/');
-      }
-    });
+    // Check URL for reset parameter (fallback)
+    if (searchParams.get('reset') === 'true' || searchParams.get('type') === 'recovery') {
+      setView('reset-password');
+    }
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams, view]);
 
   const validateInputs = (checkPassword = true) => {
     const newErrors: { email?: string; password?: string } = {};
@@ -234,6 +241,101 @@ export default function AuthPage() {
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Sign In
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (view === 'reset-password') {
+    const handleResetPassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      
+      const newErrors: { password?: string; confirmPassword?: string } = {};
+      
+      const passwordResult = passwordSchema.safeParse(password);
+      if (!passwordResult.success) {
+        newErrors.password = passwordResult.error.errors[0].message;
+      }
+      
+      if (password !== confirmPassword) {
+        newErrors.confirmPassword = 'Passwords do not match';
+      }
+      
+      setErrors(newErrors);
+      if (Object.keys(newErrors).length > 0) return;
+
+      setLoading(true);
+      const { error } = await supabase.auth.updateUser({ password });
+
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success('Password updated successfully!');
+        // Sign out and redirect to login
+        await supabase.auth.signOut();
+        setView('main');
+        setPassword('');
+        setConfirmPassword('');
+      }
+      setLoading(false);
+    };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="p-3 bg-primary/10 rounded-full">
+                <KeyRound className="h-8 w-8 text-primary" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Set New Password</CardTitle>
+            <CardDescription>
+              Enter your new password below
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+                {errors.confirmPassword && (
+                  <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+                )}
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  'Update Password'
+                )}
               </Button>
             </form>
           </CardContent>
