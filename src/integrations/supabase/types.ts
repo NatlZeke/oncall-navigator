@@ -91,6 +91,39 @@ export type Database = {
         }
         Relationships: []
       }
+      authorized_emails: {
+        Row: {
+          authorized_at: string
+          authorized_by_user_id: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          phone: string | null
+          used_at: string | null
+        }
+        Insert: {
+          authorized_at?: string
+          authorized_by_user_id?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          used_at?: string | null
+        }
+        Update: {
+          authorized_at?: string
+          authorized_by_user_id?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       compliance_alert_configs: {
         Row: {
           alert_type: string
