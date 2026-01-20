@@ -30,17 +30,12 @@ async function validateTwilioSignature(
   // Ensure HTTPS (Twilio always calls HTTPS)
   fullUrl = fullUrl.replace('http://', 'https://');
 
-  // For POST requests, append sorted form parameters
-  const params: [string, string][] = [];
-  formData.forEach((value, key) => {
-    params.push([key, value.toString()]);
-  });
-  params.sort((a, b) => a[0].localeCompare(b[0]));
-  
+  // IMPORTANT: Twilio does NOT sort parameters - they must be appended in the exact order received
+  // The signature is calculated using parameters in the order they appear in the POST body
   let data = fullUrl;
-  for (const [key, value] of params) {
-    data += key + value;
-  }
+  formData.forEach((value, key) => {
+    data += key + value.toString();
+  });
 
   // Calculate HMAC-SHA1
   const encoder = new TextEncoder();
