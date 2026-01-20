@@ -19,8 +19,16 @@ async function validateTwilioSignature(
     return false;
   }
 
-  const url = new URL(req.url);
-  let fullUrl = url.toString();
+  // Build the full URL that Twilio used
+  // Supabase edge functions may report incorrect URL due to proxy, so we reconstruct it
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const functionName = 'twilio-status-webhook';
+  
+  // Use the canonical URL that Twilio is configured to call
+  let fullUrl = `${supabaseUrl}/functions/v1/${functionName}`;
+  
+  // Ensure HTTPS (Twilio always calls HTTPS)
+  fullUrl = fullUrl.replace('http://', 'https://');
 
   const params: [string, string][] = [];
   formData.forEach((value, key) => {
@@ -47,7 +55,7 @@ async function validateTwilioSignature(
 
   const isValid = signature === calculatedSignature;
   if (!isValid) {
-    console.error('Invalid Twilio signature', { received: signature, calculated: calculatedSignature });
+    console.error('Invalid Twilio signature', { received: signature, calculated: calculatedSignature, url: fullUrl });
   }
   
   return isValid;
