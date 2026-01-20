@@ -1014,7 +1014,9 @@ function generateEstablishedPatientQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, I am, I'm not sure">
-    <Say voice="Polly.Joanna-Neural">Are you an established patient with our office? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Are you an established patient with our office?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no, or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1025,7 +1027,9 @@ function generateRecentSurgeryQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, I don't know">
-    <Say voice="Polly.Joanna-Neural">Have you had eye surgery recently? Press 1 for yes, 2 for no, or say I don't know if you're unsure.</Say>
+    <Say voice="Polly.Joanna-Neural">Have you had eye surgery recently?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes, no, or I don't know. Or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1036,7 +1040,9 @@ function generateVisionLossQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
-    <Say voice="Polly.Joanna-Neural">Are you experiencing vision loss or sudden vision changes? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Are you experiencing vision loss or sudden vision changes?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no, or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1047,7 +1053,9 @@ function generateEyePainQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, mild, moderate, severe">
-    <Say voice="Polly.Joanna-Neural">Are you experiencing eye pain? If yes, is it mild, moderate, or severe? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Are you experiencing eye pain?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no. If yes, let me know if it's mild, moderate, or severe. Or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1058,7 +1066,9 @@ function generateFlashesFloatersQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, flashes, floaters, curtain, shadow">
-    <Say voice="Polly.Joanna-Neural">Do you see flashes, floaters, or a curtain or shadow in your vision? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Do you see flashes, floaters, or a curtain or shadow in your vision?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no, or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1069,7 +1079,9 @@ function generateTraumaQuestion(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
-    <Say voice="Polly.Joanna-Neural">Have you had any trauma to your eye or chemical exposure? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Have you had any trauma to your eye or chemical exposure?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no, or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1184,7 +1196,9 @@ function generatePrescriptionSafetyCheck(baseUrl: string): string {
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
-    <Say voice="Polly.Joanna-Neural">Just to confirm. Are you having sudden vision loss, severe eye pain, or an injury to the eye right now? Press 1 for yes, or 2 for no.</Say>
+    <Say voice="Polly.Joanna-Neural">Just to confirm. Are you having sudden vision loss, severe eye pain, or an injury to the eye right now?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">You can say yes or no, or press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
