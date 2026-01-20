@@ -13,8 +13,39 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    
+
+    // SECURITY: Verify the caller is authenticated
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      console.error("Missing authorization header");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized - authentication required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Create a client with the user's auth token to verify their identity
+    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    // Verify the user's token and get their identity
+    const { data: { user: callerUser }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError || !callerUser) {
+      console.error("Invalid auth token:", authError?.message);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized - invalid token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Create admin client for privileged operations
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -22,11 +53,40 @@ serve(async (req) => {
       },
     });
 
+    // SECURITY: Verify the caller has admin role
+    const { data: hasAdminRole, error: roleCheckError } = await supabaseAdmin
+      .rpc('has_role', { _user_id: callerUser.id, _role: 'admin' });
+
+    if (roleCheckError) {
+      console.error("Error checking admin role:", roleCheckError.message);
+      return new Response(
+        JSON.stringify({ error: "Failed to verify permissions" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!hasAdminRole) {
+      console.error(`User ${callerUser.id} attempted to create admin user without admin privileges`);
+      return new Response(
+        JSON.stringify({ error: "Forbidden - admin role required" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { email, full_name, phone, role } = await req.json();
 
     if (!email || !role) {
       return new Response(
         JSON.stringify({ error: "Email and role are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate role is a valid app_role
+    const validRoles = ['admin', 'manager', 'provider', 'scheduler', 'operator_readonly'];
+    if (!validRoles.includes(role)) {
+      return new Response(
+        JSON.stringify({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -78,7 +138,7 @@ serve(async (req) => {
       email,
     });
 
-    console.log(`Created admin user: ${email} with role: ${role}`);
+    console.log(`Admin user created: ${email} with role: ${role} by admin: ${callerUser.email}`);
 
     return new Response(
       JSON.stringify({ 
