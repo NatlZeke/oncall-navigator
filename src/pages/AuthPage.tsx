@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Phone, ArrowLeft, Loader2, KeyRound } from 'lucide-react';
+import { Phone, ArrowLeft, Loader2, KeyRound, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Please enter a valid email address');
@@ -28,6 +28,9 @@ export default function AuthPage() {
   const [view, setView] = useState<AuthView>('main');
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [authMessage, setAuthMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordUpdated, setPasswordUpdated] = useState(false);
 
   useEffect(() => {
     // Listen for auth state changes - this catches the PASSWORD_RECOVERY event
@@ -250,6 +253,7 @@ export default function AuthPage() {
   }
 
   if (view === 'reset-password') {
+
     const handleResetPassword = async (e: React.FormEvent) => {
       e.preventDefault();
       
@@ -272,16 +276,54 @@ export default function AuthPage() {
 
       if (error) {
         toast.error(error.message);
+        setLoading(false);
       } else {
-        toast.success('Password updated successfully!');
-        // Sign out and redirect to login
+        setPasswordUpdated(true);
         await supabase.auth.signOut();
-        setView('main');
         setPassword('');
         setConfirmPassword('');
+        setLoading(false);
+        // Auto-redirect after 3 seconds
+        setTimeout(() => {
+          setView('main');
+          setPasswordUpdated(false);
+        }, 3000);
       }
-      setLoading(false);
     };
+
+    if (passwordUpdated) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-3 bg-primary/10 rounded-full">
+                  <CheckCircle className="h-8 w-8 text-primary" />
+                </div>
+              </div>
+              <CardTitle className="text-2xl">Password Updated!</CardTitle>
+              <CardDescription>
+                Your password has been successfully changed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Redirecting to sign in...
+              </p>
+              <Button 
+                className="w-full" 
+                onClick={() => {
+                  setView('main');
+                  setPasswordUpdated(false);
+                }}
+              >
+                Sign In Now
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -301,28 +343,60 @@ export default function AuthPage() {
             <form onSubmit={handleResetPassword} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
                 {errors.password && (
                   <p className="text-sm text-destructive">{errors.password}</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm-password">Confirm Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
                 {errors.confirmPassword && (
                   <p className="text-sm text-destructive">{errors.confirmPassword}</p>
                 )}
