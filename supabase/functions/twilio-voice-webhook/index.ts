@@ -20,8 +20,15 @@ async function validateTwilioSignature(
   }
 
   // Build the full URL that Twilio used
-  const url = new URL(req.url);
-  let fullUrl = url.toString();
+  // Supabase edge functions may report incorrect URL due to proxy, so we reconstruct it
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const functionName = 'twilio-voice-webhook';
+  
+  // Use the canonical URL that Twilio is configured to call
+  let fullUrl = `${supabaseUrl}/functions/v1/${functionName}`;
+  
+  // Ensure HTTPS (Twilio always calls HTTPS)
+  fullUrl = fullUrl.replace('http://', 'https://');
 
   // For POST requests, append sorted form parameters
   const params: [string, string][] = [];
