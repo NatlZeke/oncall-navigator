@@ -263,30 +263,65 @@ const PRESCRIPTION_KEYWORDS = [
   'need more', 'running low'
 ];
 
+// Helper to log webhook health
+async function logWebhookHealth(
+  supabase: any,
+  status: string,
+  errorMessage?: string,
+  errorDetails?: Record<string, unknown>,
+  callerPhone?: string,
+  callSid?: string,
+  responseTimeMs?: number
+) {
+  try {
+    await supabase.from('webhook_health_logs').insert({
+      webhook_name: 'twilio-voice-webhook',
+      status,
+      error_message: errorMessage,
+      error_details: errorDetails || {},
+      caller_phone: callerPhone,
+      twilio_call_sid: callSid,
+      response_time_ms: responseTimeMs,
+    });
+  } catch (err) {
+    console.error('Failed to log webhook health:', err);
+  }
+}
+
 serve(async (req) => {
+  const startTime = Date.now();
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Initialize supabase early for logging
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     if (!twilioAuthToken) {
       console.error('TWILIO_AUTH_TOKEN not configured');
+      await logWebhookHealth(supabase, 'error', 'TWILIO_AUTH_TOKEN not configured', {}, undefined, undefined, Date.now() - startTime);
       return new Response('Server configuration error', { status: 500, headers: corsHeaders });
     }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Clone request to read body twice (for validation and processing)
     const clonedReq = req.clone();
     const formDataForValidation = await clonedReq.formData();
     
+    // Get call info early for logging
+    const formDataPreview = await req.clone().formData();
+    const callerPhoneForLog = formDataPreview.get('From') as string;
+    const callSidForLog = formDataPreview.get('CallSid') as string;
+    
     // Validate Twilio signature
     const isValid = await validateTwilioSignature(req, formDataForValidation, twilioAuthToken);
     if (!isValid) {
       console.error('Rejected request with invalid Twilio signature');
+      await logWebhookHealth(supabase, 'signature_invalid', 'Invalid Twilio signature', {}, callerPhoneForLog, callSidForLog, Date.now() - startTime);
       return new Response('Forbidden', { status: 403, headers: corsHeaders });
     }
 
@@ -733,12 +768,17 @@ serve(async (req) => {
         await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name' });
     }
 
+    // Log successful response
+    await logWebhookHealth(supabase, 'success', undefined, { stage: metadata?.stage }, callerPhoneForLog, callSidForLog, Date.now() - startTime);
+    
     return new Response(twimlResponse, {
       headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in twilio-voice-webhook:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    await logWebhookHealth(supabase, 'error', errorMessage, { stack: error instanceof Error ? error.stack : undefined }, undefined, undefined, Date.now() - startTime);
     return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna-Neural">Technical difficulties. If this is an emergency, dial 911.</Say>

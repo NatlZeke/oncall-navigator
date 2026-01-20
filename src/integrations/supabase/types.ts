@@ -772,6 +772,84 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_alert_configs: {
+        Row: {
+          check_window_minutes: number
+          created_at: string
+          enabled: boolean
+          failure_threshold_percent: number
+          id: string
+          last_alert_at: string | null
+          min_calls_for_alert: number
+          notify_email: string[] | null
+          notify_phone: string[] | null
+          updated_at: string
+          webhook_name: string
+        }
+        Insert: {
+          check_window_minutes?: number
+          created_at?: string
+          enabled?: boolean
+          failure_threshold_percent?: number
+          id?: string
+          last_alert_at?: string | null
+          min_calls_for_alert?: number
+          notify_email?: string[] | null
+          notify_phone?: string[] | null
+          updated_at?: string
+          webhook_name: string
+        }
+        Update: {
+          check_window_minutes?: number
+          created_at?: string
+          enabled?: boolean
+          failure_threshold_percent?: number
+          id?: string
+          last_alert_at?: string | null
+          min_calls_for_alert?: number
+          notify_email?: string[] | null
+          notify_phone?: string[] | null
+          updated_at?: string
+          webhook_name?: string
+        }
+        Relationships: []
+      }
+      webhook_health_logs: {
+        Row: {
+          caller_phone: string | null
+          created_at: string
+          error_details: Json | null
+          error_message: string | null
+          id: string
+          response_time_ms: number | null
+          status: string
+          twilio_call_sid: string | null
+          webhook_name: string
+        }
+        Insert: {
+          caller_phone?: string | null
+          created_at?: string
+          error_details?: Json | null
+          error_message?: string | null
+          id?: string
+          response_time_ms?: number | null
+          status: string
+          twilio_call_sid?: string | null
+          webhook_name: string
+        }
+        Update: {
+          caller_phone?: string | null
+          created_at?: string
+          error_details?: Json | null
+          error_message?: string | null
+          id?: string
+          response_time_ms?: number | null
+          status?: string
+          twilio_call_sid?: string | null
+          webhook_name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
