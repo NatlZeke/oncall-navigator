@@ -43,6 +43,7 @@ import {
   Home,
   Pill,
   UserCog,
+  UserPlus,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -122,6 +123,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
     {
       title: 'Settings',
       items: [
+        { to: '/authorized-users', icon: <UserPlus className="h-4 w-4" />, label: 'Authorized Users' },
         { to: '/billing', icon: <CreditCard className="h-4 w-4" />, label: 'Billing & Usage' },
       ],
     },
