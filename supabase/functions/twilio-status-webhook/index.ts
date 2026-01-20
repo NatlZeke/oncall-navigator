@@ -30,11 +30,18 @@ async function validateTwilioSignature(
   // Ensure HTTPS (Twilio always calls HTTPS)
   fullUrl = fullUrl.replace('http://', 'https://');
 
-  // IMPORTANT: Twilio does NOT sort parameters - they must be appended in the exact order received
-  let data = fullUrl;
+  // Twilio requires parameters to be sorted alphabetically by key
+  const params: Record<string, string> = {};
   formData.forEach((value, key) => {
-    data += key + value.toString();
+    params[key] = value.toString();
   });
+  
+  // Sort keys alphabetically and build the data string
+  const sortedKeys = Object.keys(params).sort();
+  let data = fullUrl;
+  for (const key of sortedKeys) {
+    data += key + params[key];
+  }
 
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
