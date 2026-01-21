@@ -91,6 +91,33 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_profile_access_logs: {
+        Row: {
+          access_type: string
+          accessed_at: string
+          accessed_profile_id: string | null
+          admin_user_id: string
+          id: string
+          query_context: string | null
+        }
+        Insert: {
+          access_type?: string
+          accessed_at?: string
+          accessed_profile_id?: string | null
+          admin_user_id: string
+          id?: string
+          query_context?: string | null
+        }
+        Update: {
+          access_type?: string
+          accessed_at?: string
+          accessed_profile_id?: string | null
+          admin_user_id?: string
+          id?: string
+          query_context?: string | null
+        }
+        Relationships: []
+      }
       authorized_emails: {
         Row: {
           authorized_at: string
@@ -990,6 +1017,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_all_profiles_with_audit: {
+        Args: { context?: string }
+        Returns: {
+          company_id: string
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          office_id: string
+          phone: string
+          updated_at: string
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
