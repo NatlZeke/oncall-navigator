@@ -1,5 +1,6 @@
+import * as React from 'react';
 import { Phone, User, Clock, Moon, Sun } from 'lucide-react';
-import { format, isWeekend } from 'date-fns';
+import { isWeekend } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 interface SingleOnCallCardProps {
@@ -12,7 +13,8 @@ interface SingleOnCallCardProps {
   afterHoursEnd: string;
 }
 
-export function SingleOnCallCard({ provider, afterHoursStart, afterHoursEnd }: SingleOnCallCardProps) {
+export const SingleOnCallCard = React.forwardRef<HTMLDivElement, SingleOnCallCardProps>(
+  ({ provider, afterHoursStart, afterHoursEnd }, ref) => {
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinutes = now.getMinutes();
@@ -23,7 +25,7 @@ export function SingleOnCallCard({ provider, afterHoursStart, afterHoursEnd }: S
     currentTimeStr < afterHoursEnd;
 
   return (
-    <div className="rounded-2xl border bg-card overflow-hidden animate-fade-in">
+    <div ref={ref} className="rounded-2xl border bg-card overflow-hidden animate-fade-in">
       {/* Status header */}
       <div className={cn(
         'flex items-center justify-between px-4 py-3',
@@ -96,4 +98,5 @@ export function SingleOnCallCard({ provider, afterHoursStart, afterHoursEnd }: S
       </div>
     </div>
   );
-}
+});
+SingleOnCallCard.displayName = "SingleOnCallCard";
