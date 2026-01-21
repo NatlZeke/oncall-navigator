@@ -119,6 +119,35 @@ function parseProviderReply(body: string): ProviderReplyAction {
   return null;
 }
 
+// Validate escalation is eligible for callback
+function validateCallbackEligibility(escalation: any): string | null {
+  // Check if already resolved/canceled
+  if (escalation.status === 'resolved' || escalation.status === 'canceled') {
+    return 'Cannot initiate callback: escalation is already resolved or canceled.';
+  }
+
+  // Check if summary has been sent (summary-before-call policy)
+  if (!escalation.summary_sent_at) {
+    return 'Cannot initiate callback: summary has not been sent to you yet.';
+  }
+
+  // Check if callback already in progress
+  const inProgressStatuses = ['provider_dialing', 'provider_answered', 'patient_dialing', 'connected'];
+  if (inProgressStatuses.includes(escalation.callback_status)) {
+    return `Callback already in progress for Escalation ${escalation.id.substring(0, 8)}.`;
+  }
+
+  // Check disposition - NEXT_BUSINESS_DAY requires admin override
+  const structuredSummary = escalation.structured_summary || {};
+  const disposition = structuredSummary.disposition || escalation.triage_level;
+  
+  if (disposition === 'NEXT_BUSINESS_DAY' || disposition === 'nonUrgent') {
+    return 'Cannot initiate callback for NEXT_BUSINESS_DAY disposition. Contact office for admin override.';
+  }
+
+  return null; // Eligible
+}
+
 async function handleProviderReply(
   supabase: any,
   from: string,
@@ -166,14 +195,21 @@ async function handleProviderReply(
 
       return `Acknowledged. Escalation ${escalationId.substring(0, 8)} marked as received. Timer stopped.`;
 
-    case 'CALL':
+    case 'CALL': {
+      // Validate callback eligibility
+      const callbackValidation = validateCallbackEligibility(escalation);
+      if (callbackValidation) {
+        return callbackValidation;
+      }
+
+      // Update escalation status
       await supabase.from('escalations').update({
         status: 'acknowledged',
         acknowledged_at: escalation.acknowledged_at || now,
-        callback_initiated_at: now,
         provider_reply: rawBody,
         provider_reply_at: now,
-        ack_type: 'will_call'
+        ack_type: 'will_call',
+        callback_status: 'queued'
       }).eq('id', escalationId);
 
       await supabase.from('escalation_events').insert({
@@ -182,7 +218,37 @@ async function handleProviderReply(
         payload: { action: 'CALL', raw_reply: rawBody, replied_at: now }
       });
 
-      return `Callback initiated for ${escalation.patient_name}. Number: ${escalation.callback_number}`;
+      // Trigger the callback bridge
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      
+      try {
+        const bridgeResponse = await fetch(`${supabaseUrl}/functions/v1/twilio-callback-bridge`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ action: 'initiate', escalation_id: escalationId })
+        });
+
+        const bridgeResult = await bridgeResponse.json();
+        
+        if (bridgeResult.success) {
+          return `Starting callback now. You'll receive a call shortly; once you answer, we will connect you to ${escalation.patient_name}.`;
+        } else {
+          // Revert callback status
+          await supabase.from('escalations').update({
+            callback_status: null
+          }).eq('id', escalationId);
+          
+          return `Callback initiation failed: ${bridgeResult.error}. Please try again or call the patient directly at ${escalation.callback_number}.`;
+        }
+      } catch (error) {
+        console.error('Error calling callback bridge:', error);
+        return `Callback initiation failed. Please call the patient directly at ${escalation.callback_number}.`;
+      }
+    }
 
     case 'ER':
       await supabase.from('escalations').update({

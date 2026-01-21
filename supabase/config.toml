@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.compliance-monitor]
 verify_jwt = true
+
+[functions.twilio-callback-bridge]
+verify_jwt = false
