@@ -37,6 +37,7 @@ import { PhysicianGuaranteeCard } from '@/components/PhysicianGuaranteeCard';
 import { EscalationStatusCard } from '@/components/EscalationStatusCard';
 import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
 import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
+import { SMSSummaryPreview } from '@/components/SMSSummaryPreview';
 
 const severityColors: Record<EscalationSeverity, string> = {
   emergent: 'bg-red-500/20 text-red-700 border-red-500/30',
@@ -207,6 +208,18 @@ const EscalationManagementPage = () => {
               <p className="text-sm text-muted-foreground">{escalation.resolution_notes}</p>
             </div>
           )}
+
+          {/* SMS Summary Preview */}
+          <div className="mt-4">
+            <SMSSummaryPreview
+              smsBody={(escalation as any).sms_body || null}
+              templateUsed={(escalation as any).sms_template_used || null}
+              sentAt={(escalation as any).summary_sent_at || null}
+              twilioSid={(escalation as any).sms_twilio_sid || null}
+              providerReply={(escalation as any).provider_reply || null}
+              providerReplyAt={(escalation as any).provider_reply_at || null}
+            />
+          </div>
         </CardContent>
       </Card>
     );
