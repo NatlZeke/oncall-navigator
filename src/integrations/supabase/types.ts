@@ -118,6 +118,30 @@ export type Database = {
         }
         Relationships: []
       }
+      authorized_email_access_logs: {
+        Row: {
+          accessed_at: string
+          action: string
+          admin_user_id: string
+          id: string
+          query_context: string | null
+        }
+        Insert: {
+          accessed_at?: string
+          action?: string
+          admin_user_id: string
+          id?: string
+          query_context?: string | null
+        }
+        Update: {
+          accessed_at?: string
+          action?: string
+          admin_user_id?: string
+          id?: string
+          query_context?: string | null
+        }
+        Relationships: []
+      }
       authorized_emails: {
         Row: {
           authorized_at: string
