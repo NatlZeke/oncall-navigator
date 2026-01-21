@@ -7,14 +7,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-twilio-signature',
 };
 
-// Office caller ID mapping (use main office line or configured caller ID)
-const officeCallerIds: Record<string, string> = {
-  'hill-country-eye': '+15125281144',
-  'office-1': '+15125281144',
-  'office-2': '+15125281155',
-};
-
-const DEFAULT_CALLER_ID = '+15125281144';
+// Get caller ID - use Twilio phone number or office-specific override
+function getCallerId(officeId: string): string {
+  const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
+  
+  // Office-specific overrides (if configured)
+  const officeCallerIds: Record<string, string> = {
+    // 'office-1': '+15125281144', // Uncomment when verified
+  };
+  
+  return officeCallerIds[officeId] || twilioPhone || '';
+}
 
 // Validate Twilio webhook signature
 async function validateTwilioSignature(
@@ -92,7 +95,11 @@ async function initiateCallbackBridge(supabase: any, escalationId: string): Prom
   const providerPhone = escalation.assigned_provider_phone;
   const patientCallback = escalation.callback_number;
   const officeId = escalation.office_id;
-  const callerId = officeCallerIds[officeId] || DEFAULT_CALLER_ID;
+  const callerId = getCallerId(officeId);
+  
+  if (!callerId) {
+    return { success: false, error: 'No caller ID configured. Set TWILIO_PHONE_NUMBER secret.' };
+  }
 
   // Update status to queued
   await supabase.from('escalations').update({
@@ -224,7 +231,7 @@ function validateCallbackEligibility(escalation: any): string | null {
 function generateProviderAnswerTwiML(escalation: any): string {
   const patientCallback = escalation.callback_number;
   const officeId = escalation.office_id;
-  const callerId = officeCallerIds[officeId] || DEFAULT_CALLER_ID;
+  const callerId = getCallerId(officeId);
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   
   const statusCallbackUrl = `${supabaseUrl}/functions/v1/twilio-callback-bridge?action=status&escalation_id=${escalation.id}&leg=patient`;
@@ -305,9 +312,20 @@ serve(async (req) => {
 
     console.log('Callback bridge request:', { action, escalationId, leg });
 
-    // Handle JSON requests (initiate from app)
-    if (req.headers.get('content-type')?.includes('application/json')) {
-      const body = await req.json();
+    // Handle JSON requests (initiate from app) - check both query param and body
+    const contentType = req.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json') || (!action && !contentType.includes('form'))) {
+      let body: { action?: string; escalation_id?: string } = {};
+      
+      try {
+        const text = await req.text();
+        if (text) {
+          body = JSON.parse(text);
+        }
+      } catch {
+        // No JSON body
+      }
       
       if (body.action === 'initiate' && body.escalation_id) {
         // Verify authorization
@@ -362,6 +380,14 @@ serve(async (req) => {
         });
 
         return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // No valid JSON action, return error
+      if (!action) {
+        return new Response(JSON.stringify({ error: 'Missing action parameter' }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
