@@ -98,6 +98,132 @@ async function validateTwilioSignature(
   return isValid;
 }
 
+// Provider reply keywords and their actions
+type ProviderReplyAction = 'ACK' | 'CALL' | 'ER' | 'RESOLVED' | null;
+
+function parseProviderReply(body: string): ProviderReplyAction {
+  const normalizedBody = body.trim().toUpperCase();
+  
+  // Check for exact matches first
+  if (normalizedBody === 'ACK' || normalizedBody === 'ACKNOWLEDGE') return 'ACK';
+  if (normalizedBody === 'CALL' || normalizedBody === 'CALLBACK') return 'CALL';
+  if (normalizedBody === 'ER') return 'ER';
+  if (normalizedBody === 'RESOLVED' || normalizedBody === 'RESOLVE') return 'RESOLVED';
+  
+  // Check for keywords at the start of the message
+  if (/^ACK\b/i.test(normalizedBody)) return 'ACK';
+  if (/^CALL\b/i.test(normalizedBody)) return 'CALL';
+  if (/^ER\b/i.test(normalizedBody)) return 'ER';
+  if (/^RESOLVED?\b/i.test(normalizedBody)) return 'RESOLVED';
+  
+  return null;
+}
+
+async function handleProviderReply(
+  supabase: any,
+  from: string,
+  action: ProviderReplyAction,
+  rawBody: string
+): Promise<string> {
+  if (!action) {
+    return "Reply not recognized. Use: ACK, CALL, ER, or RESOLVED.";
+  }
+
+  // Find the most recent pending/acknowledged escalation for this provider phone
+  const { data: escalation, error } = await supabase
+    .from('escalations')
+    .select('*')
+    .eq('assigned_provider_phone', from)
+    .in('status', ['pending', 'acknowledged'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !escalation) {
+    console.log('No active escalation found for provider:', from);
+    return "No active escalation found for your number.";
+  }
+
+  const escalationId = escalation.id;
+  const now = new Date().toISOString();
+
+  // Handle each action type
+  switch (action) {
+    case 'ACK':
+      await supabase.from('escalations').update({
+        status: 'acknowledged',
+        acknowledged_at: now,
+        provider_reply: rawBody,
+        provider_reply_at: now,
+        ack_type: 'acknowledged'
+      }).eq('id', escalationId);
+
+      await supabase.from('escalation_events').insert({
+        escalation_id: escalationId,
+        event_type: 'provider_sms_reply',
+        payload: { action: 'ACK', raw_reply: rawBody, replied_at: now }
+      });
+
+      return `Acknowledged. Escalation ${escalationId.substring(0, 8)} marked as received. Timer stopped.`;
+
+    case 'CALL':
+      await supabase.from('escalations').update({
+        status: 'acknowledged',
+        acknowledged_at: escalation.acknowledged_at || now,
+        callback_initiated_at: now,
+        provider_reply: rawBody,
+        provider_reply_at: now,
+        ack_type: 'will_call'
+      }).eq('id', escalationId);
+
+      await supabase.from('escalation_events').insert({
+        escalation_id: escalationId,
+        event_type: 'provider_sms_reply',
+        payload: { action: 'CALL', raw_reply: rawBody, replied_at: now }
+      });
+
+      return `Callback initiated for ${escalation.patient_name}. Number: ${escalation.callback_number}`;
+
+    case 'ER':
+      await supabase.from('escalations').update({
+        status: 'acknowledged',
+        acknowledged_at: escalation.acknowledged_at || now,
+        disposition_override: 'ER_RECOMMENDED',
+        provider_reply: rawBody,
+        provider_reply_at: now,
+        ack_type: 'er_advised'
+      }).eq('id', escalationId);
+
+      await supabase.from('escalation_events').insert({
+        escalation_id: escalationId,
+        event_type: 'provider_sms_reply',
+        payload: { action: 'ER', raw_reply: rawBody, replied_at: now, disposition_override: 'ER_RECOMMENDED' }
+      });
+
+      return `ER advised for patient. Disposition override logged.`;
+
+    case 'RESOLVED':
+      await supabase.from('escalations').update({
+        status: 'resolved',
+        resolved_at: now,
+        provider_reply: rawBody,
+        provider_reply_at: now,
+        resolution_notes: `Resolved via SMS reply: ${rawBody}`
+      }).eq('id', escalationId);
+
+      await supabase.from('escalation_events').insert({
+        escalation_id: escalationId,
+        event_type: 'provider_sms_reply',
+        payload: { action: 'RESOLVED', raw_reply: rawBody, replied_at: now }
+      });
+
+      return `Escalation ${escalationId.substring(0, 8)} marked as resolved.`;
+
+    default:
+      return "Reply not recognized. Use: ACK, CALL, ER, or RESOLVED.";
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -135,6 +261,42 @@ serve(async (req) => {
 
     console.log('Twilio SMS Webhook received:', { messageSid, from, to, bodyLength: body.length });
 
+    // Check if this is a provider reply to an escalation
+    const providerAction = parseProviderReply(body);
+    
+    // Check if sender is a known provider phone
+    const { data: providerCheck } = await supabase
+      .from('escalations')
+      .select('id')
+      .eq('assigned_provider_phone', from)
+      .limit(1);
+    
+    const isProvider = providerCheck && providerCheck.length > 0;
+
+    if (isProvider && providerAction) {
+      // Handle as provider reply
+      const responseMessage = await handleProviderReply(supabase, from, providerAction, body);
+      
+      // Log the provider reply
+      await supabase.from('notification_logs').insert({
+        notification_type: 'provider_sms_reply',
+        recipient_phone: from,
+        content: { incoming: body, response: responseMessage, action: providerAction },
+        status: 'completed',
+        metadata: { message_sid: messageSid, action: providerAction }
+      });
+
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message>${escapeXml(responseMessage)}</Message>
+</Response>`;
+
+      return new Response(twiml, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
+      });
+    }
+
+    // Standard patient SMS flow
     // Look for existing conversation from this phone number
     const { data: existingConversation } = await supabase
       .from('twilio_conversations')
