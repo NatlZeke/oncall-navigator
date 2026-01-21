@@ -243,8 +243,13 @@ export type Database = {
           assigned_provider_user_id: string | null
           call_sid: string | null
           callback_completed_at: string | null
+          callback_connected_at: string | null
+          callback_ended_at: string | null
+          callback_failure_reason: string | null
           callback_initiated_at: string | null
           callback_number: string
+          callback_started_at: string | null
+          callback_status: string | null
           conversation_id: string | null
           created_at: string
           current_tier: number
@@ -254,8 +259,10 @@ export type Database = {
           id: string
           is_established_patient: boolean | null
           office_id: string
+          patient_call_sid: string | null
           patient_name: string | null
           primary_complaint: string | null
+          provider_call_sid: string | null
           provider_reply: string | null
           provider_reply_at: string | null
           resolution_notes: string | null
@@ -280,8 +287,13 @@ export type Database = {
           assigned_provider_user_id?: string | null
           call_sid?: string | null
           callback_completed_at?: string | null
+          callback_connected_at?: string | null
+          callback_ended_at?: string | null
+          callback_failure_reason?: string | null
           callback_initiated_at?: string | null
           callback_number: string
+          callback_started_at?: string | null
+          callback_status?: string | null
           conversation_id?: string | null
           created_at?: string
           current_tier?: number
@@ -291,8 +303,10 @@ export type Database = {
           id?: string
           is_established_patient?: boolean | null
           office_id: string
+          patient_call_sid?: string | null
           patient_name?: string | null
           primary_complaint?: string | null
+          provider_call_sid?: string | null
           provider_reply?: string | null
           provider_reply_at?: string | null
           resolution_notes?: string | null
@@ -317,8 +331,13 @@ export type Database = {
           assigned_provider_user_id?: string | null
           call_sid?: string | null
           callback_completed_at?: string | null
+          callback_connected_at?: string | null
+          callback_ended_at?: string | null
+          callback_failure_reason?: string | null
           callback_initiated_at?: string | null
           callback_number?: string
+          callback_started_at?: string | null
+          callback_status?: string | null
           conversation_id?: string | null
           created_at?: string
           current_tier?: number
@@ -328,8 +347,10 @@ export type Database = {
           id?: string
           is_established_patient?: boolean | null
           office_id?: string
+          patient_call_sid?: string | null
           patient_name?: string | null
           primary_complaint?: string | null
+          provider_call_sid?: string | null
           provider_reply?: string | null
           provider_reply_at?: string | null
           resolution_notes?: string | null
@@ -1003,6 +1024,11 @@ export type Database = {
         | "callback_failed"
         | "summary_sent"
         | "provider_sms_reply"
+        | "callback_provider_dialing"
+        | "callback_provider_answered"
+        | "callback_patient_dialing"
+        | "callback_connected"
+        | "callback_canceled"
       evidence_type:
         | "audit_logs"
         | "access_review"
@@ -1160,6 +1186,11 @@ export const Constants = {
         "callback_failed",
         "summary_sent",
         "provider_sms_reply",
+        "callback_provider_dialing",
+        "callback_provider_answered",
+        "callback_patient_dialing",
+        "callback_connected",
+        "callback_canceled",
       ],
       evidence_type: [
         "audit_logs",

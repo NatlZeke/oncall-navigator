@@ -38,6 +38,7 @@ import { EscalationStatusCard } from '@/components/EscalationStatusCard';
 import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
 import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
 import { SMSSummaryPreview } from '@/components/SMSSummaryPreview';
+import { CallbackStatusPanel } from '@/components/CallbackStatusPanel';
 
 const severityColors: Record<EscalationSeverity, string> = {
   emergent: 'bg-red-500/20 text-red-700 border-red-500/30',
@@ -218,6 +219,24 @@ const EscalationManagementPage = () => {
               twilioSid={(escalation as any).sms_twilio_sid || null}
               providerReply={(escalation as any).provider_reply || null}
               providerReplyAt={(escalation as any).provider_reply_at || null}
+            />
+          </div>
+
+          {/* Callback Status Panel */}
+          <div className="mt-4">
+            <CallbackStatusPanel
+              escalationId={escalation.id}
+              callbackStatus={(escalation as any).callback_status || null}
+              callbackStartedAt={(escalation as any).callback_started_at || null}
+              callbackConnectedAt={(escalation as any).callback_connected_at || null}
+              callbackEndedAt={(escalation as any).callback_ended_at || null}
+              providerCallSid={(escalation as any).provider_call_sid || null}
+              patientCallSid={(escalation as any).patient_call_sid || null}
+              callbackFailureReason={(escalation as any).callback_failure_reason || null}
+              patientName={(escalation as any).patient_name || escalation.patient_reference}
+              callbackNumber={(escalation as any).callback_number}
+              summarySentAt={(escalation as any).summary_sent_at || null}
+              userRole="admin"
             />
           </div>
         </CardContent>
