@@ -895,10 +895,8 @@ function determineDisposition(intake: IntakeData): Disposition {
     return 'ER_NOW';
   }
   
-  // Post-op with severe symptoms
-  if (intake.hasRecentSurgery && (intake.eyePainLevel === 'severe' || intake.visionLossSeverity === 'complete')) {
-    return 'ER_NOW';
-  }
+  // Post-op with worsening symptoms (severe pain/complete loss already handled above)
+  // This case is now covered by line 916 which escalates all post-op to URGENT_CALLBACK
   
   // URGENT_CALLBACK criteria
   if (intake.hasVisionLoss || intake.flashesFloatersNew) {
