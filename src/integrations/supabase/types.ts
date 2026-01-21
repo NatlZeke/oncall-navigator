@@ -249,16 +249,22 @@ export type Database = {
           created_at: string
           current_tier: number
           date_of_birth: string | null
+          disposition_override: string | null
           has_recent_surgery: boolean | null
           id: string
           is_established_patient: boolean | null
           office_id: string
           patient_name: string | null
           primary_complaint: string | null
+          provider_reply: string | null
+          provider_reply_at: string | null
           resolution_notes: string | null
           resolved_at: string | null
           sla_target_minutes: number
           sla_warning_minutes: number
+          sms_body: string | null
+          sms_template_used: string | null
+          sms_twilio_sid: string | null
           status: string
           structured_summary: Json
           summary_sent_at: string | null
@@ -280,16 +286,22 @@ export type Database = {
           created_at?: string
           current_tier?: number
           date_of_birth?: string | null
+          disposition_override?: string | null
           has_recent_surgery?: boolean | null
           id?: string
           is_established_patient?: boolean | null
           office_id: string
           patient_name?: string | null
           primary_complaint?: string | null
+          provider_reply?: string | null
+          provider_reply_at?: string | null
           resolution_notes?: string | null
           resolved_at?: string | null
           sla_target_minutes?: number
           sla_warning_minutes?: number
+          sms_body?: string | null
+          sms_template_used?: string | null
+          sms_twilio_sid?: string | null
           status?: string
           structured_summary?: Json
           summary_sent_at?: string | null
@@ -311,16 +323,22 @@ export type Database = {
           created_at?: string
           current_tier?: number
           date_of_birth?: string | null
+          disposition_override?: string | null
           has_recent_surgery?: boolean | null
           id?: string
           is_established_patient?: boolean | null
           office_id?: string
           patient_name?: string | null
           primary_complaint?: string | null
+          provider_reply?: string | null
+          provider_reply_at?: string | null
           resolution_notes?: string | null
           resolved_at?: string | null
           sla_target_minutes?: number
           sla_warning_minutes?: number
+          sms_body?: string | null
+          sms_template_used?: string | null
+          sms_twilio_sid?: string | null
           status?: string
           structured_summary?: Json
           summary_sent_at?: string | null
@@ -984,6 +1002,7 @@ export type Database = {
         | "callback_completed"
         | "callback_failed"
         | "summary_sent"
+        | "provider_sms_reply"
       evidence_type:
         | "audit_logs"
         | "access_review"
@@ -1140,6 +1159,7 @@ export const Constants = {
         "callback_completed",
         "callback_failed",
         "summary_sent",
+        "provider_sms_reply",
       ],
       evidence_type: [
         "audit_logs",

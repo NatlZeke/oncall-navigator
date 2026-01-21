@@ -993,22 +993,67 @@ async function handleDisposition(
   };
 
   switch (disposition) {
-    case 'ER_NOW':
+    case 'ER_NOW': {
       // Still notify doctor but primary message is ER
-      await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'ER_NOW');
-      await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid);
-      return generateERNowScript();
+      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'ER_NOW');
+      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
       
-    case 'URGENT_CALLBACK':
-      await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'URGENT_CALLBACK');
-      await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid);
+      // Update escalation with SMS details
+      if (escalationResult?.id) {
+        await updateEscalationWithSMS(supabase, escalationResult.id, smsResult);
+      }
+      return generateERNowScript();
+    }
+      
+    case 'URGENT_CALLBACK': {
+      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'URGENT_CALLBACK');
+      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
+      
+      // Update escalation with SMS details
+      if (escalationResult?.id) {
+        await updateEscalationWithSMS(supabase, escalationResult.id, smsResult);
+      }
       return generateUrgentCallbackScript();
+    }
       
     case 'NEXT_BUSINESS_DAY':
     default:
       await logNonEscalation(supabase, callSid, callerPhone, intakeData, summary.dispositionReason);
       return generateNextBusinessDayScript(onCallInfo.officeName);
   }
+}
+
+async function updateEscalationWithSMS(
+  supabase: any,
+  escalationId: string,
+  smsResult: { success: boolean; smsBody: string; templateUsed: string; twilioSid?: string }
+) {
+  const { error } = await supabase
+    .from('escalations')
+    .update({
+      sms_body: smsResult.smsBody,
+      sms_template_used: smsResult.templateUsed,
+      sms_twilio_sid: smsResult.twilioSid,
+      summary_sent_at: smsResult.success ? new Date().toISOString() : null
+    })
+    .eq('id', escalationId);
+
+  if (error) {
+    console.error('Error updating escalation with SMS details:', error);
+    return;
+  }
+
+  // Log summary sent event
+  await supabase.from('escalation_events').insert({
+    escalation_id: escalationId,
+    event_type: 'summary_sent',
+    payload: { 
+      template_used: smsResult.templateUsed,
+      char_count: smsResult.smsBody.length,
+      twilio_sid: smsResult.twilioSid,
+      sent_at: new Date().toISOString()
+    }
+  });
 }
 
 async function createEscalationRecord(
@@ -1018,7 +1063,7 @@ async function createEscalationRecord(
   summary: PreCallSummary,
   provider: { name: string; phone: string },
   disposition: Disposition
-) {
+): Promise<{ id: string } | null> {
   const { data: escalationRecord, error } = await supabase
     .from('escalations')
     .insert({
@@ -1033,7 +1078,6 @@ async function createEscalationRecord(
       primary_complaint: intakeData.primaryComplaint,
       symptoms: intakeData.symptoms,
       structured_summary: { ...summary, disposition, dispositionReason: intakeData.dispositionReason },
-      summary_sent_at: new Date().toISOString(),
       assigned_provider_name: provider.name,
       assigned_provider_phone: provider.phone,
       current_tier: 1,
@@ -1045,10 +1089,10 @@ async function createEscalationRecord(
 
   if (error) {
     console.error('Error creating escalation:', error);
-    return;
+    return null;
   }
 
-  // Log events
+  // Log initiated event
   await supabase.from('escalation_events').insert({
     escalation_id: escalationRecord.id,
     event_type: 'initiated',
@@ -1060,11 +1104,7 @@ async function createEscalationRecord(
     }
   });
 
-  await supabase.from('escalation_events').insert({
-    escalation_id: escalationRecord.id,
-    event_type: 'summary_sent',
-    payload: { summary, disposition, sent_at: new Date().toISOString() }
-  });
+  return { id: escalationRecord.id };
 }
 
 async function logNonEscalation(
@@ -1094,28 +1134,215 @@ async function logNonEscalation(
   });
 }
 
+// ============================================================================
+// SMS FORMATTER - STANDARDIZED ONCALL SUMMARY FORMAT
+// ============================================================================
+type SMSTemplate = 'long' | 'short';
+
+interface SMSFormatterInput {
+  escalationId?: string;
+  disposition: Disposition;
+  officeName: string;
+  serviceLine: string;
+  callerName: string;
+  dateOfBirth?: string;
+  isEstablishedPatient: boolean;
+  hasRecentSurgery: boolean;
+  callbackNumber: string;
+  chiefComplaint: string;
+  onset?: string;
+  // Red flags
+  visionLossSudden?: boolean;
+  flashesFloatersNew?: boolean;
+  curtainShadow?: boolean;
+  painSeverity?: string;
+  traumaOrChemical?: boolean;
+  flushed15?: boolean;
+  rednessOrDischarge?: boolean;
+  nauseaHalos?: boolean;
+  notes?: string;
+}
+
+interface SMSFormatterResult {
+  body: string;
+  templateUsed: SMSTemplate;
+  charCount: number;
+}
+
+const MAX_SMS_CHARS = 600;
+const MAX_CHIEF_COMPLAINT_CHARS = 120;
+const MAX_NOTES_CHARS = 160;
+
+function formatBooleanValue(val?: boolean): string {
+  if (val === true) return 'true';
+  if (val === false) return 'false';
+  return 'unknown';
+}
+
+function formatPainValue(val?: string): string {
+  const validPains = ['none', 'mild', 'moderate', 'severe'];
+  if (val && validPains.includes(val.toLowerCase())) {
+    return val.toLowerCase();
+  }
+  return 'unknown';
+}
+
+function formatOnsetValue(val?: string): string {
+  const validOnsets = ['sudden', 'gradual'];
+  if (val && validOnsets.includes(val.toLowerCase())) {
+    return val.toLowerCase();
+  }
+  return 'unknown';
+}
+
+function formatPhoneForDisplay(phone: string): string {
+  // Normalize to digits only
+  const digits = phone.replace(/\D/g, '');
+  // Format as US phone if 10 or 11 digits
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return phone; // Return as-is if not standard US format
+}
+
+function truncateString(str: string, maxLen: number): string {
+  if (!str) return 'unknown';
+  if (str.length <= maxLen) return str;
+  return str.substring(0, maxLen - 3) + '...';
+}
+
+function formatOnCallSummarySMS(input: SMSFormatterInput): SMSFormatterResult {
+  const {
+    escalationId = 'pending',
+    disposition,
+    officeName,
+    serviceLine,
+    callerName,
+    dateOfBirth,
+    isEstablishedPatient,
+    hasRecentSurgery,
+    callbackNumber,
+    chiefComplaint,
+    onset,
+    visionLossSudden,
+    flashesFloatersNew,
+    curtainShadow,
+    painSeverity,
+    traumaOrChemical,
+    flushed15,
+    rednessOrDischarge,
+    nauseaHalos,
+    notes,
+  } = input;
+
+  // Safe defaults
+  const safeName = callerName || 'Unknown';
+  const safeDOB = dateOfBirth || 'unknown';
+  const safeCallback = formatPhoneForDisplay(callbackNumber || 'unknown');
+  const safeCC = truncateString(chiefComplaint || 'Not stated', MAX_CHIEF_COMPLAINT_CHARS);
+  const safeOnset = formatOnsetValue(onset);
+  const safeNotes = notes ? truncateString(notes, MAX_NOTES_CHARS) : null;
+
+  // Boolean/pain formatting
+  const estPatient = isEstablishedPatient ? 'Yes' : 'No';
+  const postOp = hasRecentSurgery ? 'Yes' : 'No';
+  const visionLoss = formatBooleanValue(visionLossSudden);
+  const flashes = formatBooleanValue(flashesFloatersNew);
+  const curtain = formatBooleanValue(curtainShadow);
+  const pain = formatPainValue(painSeverity);
+  const trauma = formatBooleanValue(traumaOrChemical);
+  const flushed = formatBooleanValue(flushed15);
+  const redness = formatBooleanValue(rednessOrDischarge);
+  const nausea = formatBooleanValue(nauseaHalos);
+
+  // Build LONG_TEMPLATE
+  const longLines = [
+    `ONCALL NAVIGATOR — ${officeName}`,
+    `DISPOSITION: ${disposition} | ${serviceLine}`,
+    `Patient: ${safeName} (DOB: ${safeDOB}) | Est: ${estPatient} | PostOp: ${postOp}`,
+    `Callback: ${safeCallback}`,
+    `CC: ${safeCC}`,
+    `Onset: ${safeOnset}`,
+    `Red flags: visionloss=${visionLoss}, flashes/floaters=${flashes}, curtain=${curtain}, pain=${pain}`,
+    `Trauma/chem=${trauma} (flushed15=${flushed}), redness/discharge=${redness}, nausea/halos=${nausea}`,
+    `ID: ${escalationId}`,
+    `Reply: ACK | CALL | ER | RESOLVED`
+  ];
+
+  if (safeNotes) {
+    longLines.splice(9, 0, `Notes: ${safeNotes}`);
+  }
+
+  const longBody = longLines.join('\n');
+
+  // Check if LONG_TEMPLATE fits
+  if (longBody.length <= MAX_SMS_CHARS) {
+    return {
+      body: longBody,
+      templateUsed: 'long',
+      charCount: longBody.length
+    };
+  }
+
+  // Fallback to SHORT_TEMPLATE
+  const shortBody = `${officeName} | ${disposition}
+${safeName} DOB:${safeDOB} Est:${estPatient} PostOp:${postOp}
+CB:${safeCallback}
+CC:${safeCC}
+⚠️ visionloss:${visionLoss} curtain:${curtain} pain:${pain} trauma/chem:${trauma}
+ID:${escalationId} Reply:ACK/CALL/ER/RESOLVED`;
+
+  return {
+    body: shortBody,
+    templateUsed: 'short',
+    charCount: shortBody.length
+  };
+}
+
 async function sendPreCallSMS(
   supabase: any, 
   providerPhone: string, 
   summary: PreCallSummary, 
-  callSid: string
-): Promise<boolean> {
+  callSid: string,
+  intakeData: IntakeData,
+  escalationId?: string
+): Promise<{ success: boolean; smsBody: string; templateUsed: SMSTemplate; twilioSid?: string }> {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
   const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
 
   if (!twilioSid || !twilioAuth || !twilioPhone) {
     console.error('Twilio credentials missing');
-    return false;
+    return { success: false, smsBody: '', templateUsed: 'long' };
   }
 
-  const emoji = summary.disposition === 'ER_NOW' ? '🔴 ER_NOW' : '🟡 URGENT';
-  const smsBody = `${emoji}
-${summary.patientName} | ${summary.callbackNumber}
-${summary.isEstablishedPatient ? 'Established' : 'New'} | ${summary.hasRecentSurgery ? 'Post-Op' : 'No surgery'}
-${summary.primaryComplaint}
-${summary.dispositionReason}
-Callback requested.`;
+  // Format SMS using standardized formatter
+  const smsResult = formatOnCallSummarySMS({
+    escalationId: escalationId,
+    disposition: summary.disposition,
+    officeName: summary.officeName,
+    serviceLine: summary.serviceLine,
+    callerName: summary.patientName,
+    dateOfBirth: intakeData.dateOfBirth,
+    isEstablishedPatient: summary.isEstablishedPatient,
+    hasRecentSurgery: summary.hasRecentSurgery,
+    callbackNumber: summary.callbackNumber,
+    chiefComplaint: summary.primaryComplaint,
+    onset: intakeData.symptomOnset || intakeData.visionLossOnset,
+    visionLossSudden: intakeData.hasVisionLoss && intakeData.visionLossOnset === 'sudden',
+    flashesFloatersNew: intakeData.flashesFloatersNew,
+    curtainShadow: intakeData.hasCurtainShadow,
+    painSeverity: intakeData.eyePainLevel,
+    traumaOrChemical: intakeData.hasTraumaChemical,
+    flushed15: undefined, // Not currently tracked
+    rednessOrDischarge: intakeData.hasRednessDischarge,
+    nauseaHalos: intakeData.hasNauseaHalos,
+  });
+
+  console.log(`SMS formatted using ${smsResult.templateUsed} template (${smsResult.charCount} chars)`);
 
   try {
     const response = await fetch(
@@ -1129,7 +1356,7 @@ Callback requested.`;
         body: new URLSearchParams({
           To: providerPhone,
           From: twilioPhone,
-          Body: smsBody,
+          Body: smsResult.body,
         }),
       }
     );
@@ -1140,19 +1367,31 @@ Callback requested.`;
     await supabase.from('notification_logs').insert({
       notification_type: 'pre_call_summary',
       recipient_phone: providerPhone,
-      content: { summary, message: smsBody, call_sid: callSid },
+      content: { 
+        summary, 
+        message: smsResult.body, 
+        template_used: smsResult.templateUsed,
+        char_count: smsResult.charCount,
+        call_sid: callSid 
+      },
       status: response.ok ? 'sent' : 'failed',
       twilio_sid: result.sid,
       metadata: { 
         summary_delivered: response.ok, 
-        disposition: summary.disposition 
+        disposition: summary.disposition,
+        template_used: smsResult.templateUsed
       }
     });
     
-    return response.ok;
+    return { 
+      success: response.ok, 
+      smsBody: smsResult.body, 
+      templateUsed: smsResult.templateUsed,
+      twilioSid: result.sid
+    };
   } catch (error) {
     console.error('Error sending SMS:', error);
-    return false;
+    return { success: false, smsBody: smsResult.body, templateUsed: smsResult.templateUsed };
   }
 }
 
