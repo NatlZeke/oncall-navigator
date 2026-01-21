@@ -97,11 +97,6 @@ export default function AuthPage() {
         return false;
       }
 
-      // Prefill name if available
-      if (data.prefill?.full_name && !fullName) {
-        setFullName(data.prefill.full_name);
-      }
-
       return true;
     } catch (error) {
       console.error('Authorization check error:', error);

@@ -6,12 +6,61 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Simple in-memory rate limiting (per IP, resets on function cold start)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_MAX = 5; // Max requests per window
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour window
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  
+  if (!entry || now > entry.resetTime) {
+    // Reset or create new entry
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true };
+  }
+  
+  if (entry.count >= RATE_LIMIT_MAX) {
+    const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
+    return { allowed: false, retryAfter };
+  }
+  
+  entry.count++;
+  return { allowed: true };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Get client IP for rate limiting
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 
+      || req.headers.get("x-real-ip") 
+      || "unknown";
+    
+    // Check rate limit
+    const rateCheck = checkRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      console.warn(`Rate limit exceeded for IP: ${clientIp}`);
+      return new Response(
+        JSON.stringify({ 
+          authorized: false, 
+          error: "Too many requests. Please try again later." 
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": String(rateCheck.retryAfter || 3600)
+          } 
+        }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
@@ -33,10 +82,11 @@ serve(async (req) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if email is in authorized list
+    // Check if email is in authorized list - only fetch minimal fields needed
+    // Do NOT return PII (full_name, phone) to prevent information disclosure
     const { data, error } = await supabaseAdmin
       .from("authorized_emails")
-      .select("id, full_name, phone, used_at")
+      .select("id, used_at")
       .eq("email", normalizedEmail)
       .maybeSingle();
 
@@ -48,6 +98,8 @@ serve(async (req) => {
       );
     }
 
+    // Use consistent response timing to prevent timing attacks
+    // Return generic messages that don't reveal whether email exists
     if (!data) {
       return new Response(
         JSON.stringify({ 
@@ -68,13 +120,12 @@ serve(async (req) => {
       );
     }
 
+    // Email is authorized - return ONLY authorization status
+    // Do NOT include prefill data (full_name, phone) to prevent PII disclosure
+    // The user will enter their own information during signup
     return new Response(
       JSON.stringify({ 
-        authorized: true,
-        prefill: {
-          full_name: data.full_name,
-          phone: data.phone
-        }
+        authorized: true
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
