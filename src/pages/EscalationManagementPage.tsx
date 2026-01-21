@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { MainLayout } from '@/components/MainLayout';
 import { useApp } from '@/contexts/AppContext';
-import { getIncidentEscalationsForOffice, getServiceLinesForOffice, getCurrentOnCall, mockEscalationPaths } from '@/data/mockData';
+import { getServiceLinesForOffice, getCurrentOnCall, mockEscalationPaths } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -24,21 +24,21 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, Phone, Clock, User, Check, ArrowUp, Timer, Bell, History } from 'lucide-react';
+import { AlertTriangle, Phone, Clock, User, Check, ArrowUp, Timer, Bell, History, Loader2, RefreshCw } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { IncidentEscalation, EscalationSeverity } from '@/types';
+import { EscalationSeverity } from '@/types';
 import { ProviderAcknowledgePanel } from '@/components/ProviderAcknowledgePanel';
 import { EscalationTimeline } from '@/components/EscalationTimeline';
 import { mockEscalationEvents } from '@/data/phase4MockData';
 import type { AckType } from '@/types/phase4';
 import { PhysicianGuaranteeCard } from '@/components/PhysicianGuaranteeCard';
-import { EscalationStatusCard } from '@/components/EscalationStatusCard';
 import { SummaryBeforeCallRule } from '@/components/SummaryBeforeCallRule';
 import { AIIntakeScopeDeclaration } from '@/components/AIIntakeScopeDeclaration';
 import { SMSSummaryPreview } from '@/components/SMSSummaryPreview';
 import { CallbackStatusPanel } from '@/components/CallbackStatusPanel';
+import { useRealtimeEscalations, RealtimeEscalation } from '@/hooks/useRealtimeEscalations';
 
 const severityColors: Record<EscalationSeverity, string> = {
   emergent: 'bg-red-500/20 text-red-700 border-red-500/30',
@@ -52,6 +52,11 @@ const EscalationManagementPage = () => {
   const [activeTab, setActiveTab] = useState('active');
   const [selectedEscalationForTimeline, setSelectedEscalationForTimeline] = useState<string | null>(null);
 
+  // Use real-time escalations from database
+  const { escalations: dbEscalations, isLoading, error, refetch } = useRealtimeEscalations({
+    officeId: currentOffice?.id
+  });
+
   const handleProviderAcknowledge = (ackType: AckType, notes?: string) => {
     toast.success(`Action recorded: ${ackType}`, {
       description: notes || 'Acknowledgement logged to escalation timeline'
@@ -62,12 +67,16 @@ const EscalationManagementPage = () => {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
 
-  const escalations = getIncidentEscalationsForOffice(currentOffice.id);
   const serviceLines = getServiceLinesForOffice(currentOffice.id);
   const currentOnCall = getCurrentOnCall(currentOffice.id);
 
-  const activeEscalations = escalations.filter(e => e.status === 'active' || e.status === 'acknowledged');
-  const resolvedEscalations = escalations.filter(e => e.status === 'resolved' || e.status === 'canceled');
+  // Filter escalations by status
+  const activeEscalations = dbEscalations.filter(e => 
+    e.status === 'pending' || e.status === 'acknowledged'
+  );
+  const resolvedEscalations = dbEscalations.filter(e => 
+    e.status === 'resolved' || e.status === 'canceled'
+  );
 
   const handleCreateEscalation = () => {
     toast.success('Escalation initiated', {
@@ -76,62 +85,70 @@ const EscalationManagementPage = () => {
     setIsCreateDialogOpen(false);
   };
 
-  const handleAcknowledge = (escalation: IncidentEscalation) => {
+  const handleAcknowledge = (escalation: RealtimeEscalation) => {
     toast.success('Escalation acknowledged', {
       description: 'The provider has confirmed receipt of this escalation'
     });
   };
 
-  const handleResolve = (escalation: IncidentEscalation) => {
+  const handleResolve = (escalation: RealtimeEscalation) => {
     toast.success('Escalation resolved');
   };
 
-  const handleEscalateToNext = (escalation: IncidentEscalation) => {
+  const handleEscalateToNext = (escalation: RealtimeEscalation) => {
     toast.warning('Escalated to next tier', {
       description: `Now contacting Tier ${escalation.current_tier + 1}`
     });
   };
 
-  const EscalationCard = ({ escalation }: { escalation: IncidentEscalation }) => {
+  const EscalationCard = ({ escalation }: { escalation: RealtimeEscalation }) => {
     const [timeElapsed, setTimeElapsed] = useState('');
+
+    // Map triage_level to severity for display
+    const severity: EscalationSeverity = escalation.triage_level === 'emergent' ? 'emergent' : 'urgent';
+    const initiatedAt = escalation.created_at;
 
     useEffect(() => {
       const updateTime = () => {
-        setTimeElapsed(formatDistanceToNow(new Date(escalation.initiated_at), { addSuffix: false }));
+        setTimeElapsed(formatDistanceToNow(new Date(initiatedAt), { addSuffix: false }));
       };
       updateTime();
       const interval = setInterval(updateTime, 1000);
       return () => clearInterval(interval);
-    }, [escalation.initiated_at]);
+    }, [initiatedAt]);
 
     const escalationPath = mockEscalationPaths.find(
-      e => e.office_id === escalation.office_id && e.service_line_id === escalation.service_line_id
+      e => e.office_id === escalation.office_id
     );
+
+    // Get structured summary data
+    const summary = escalation.structured_summary || {};
+    const serviceLine = summary.serviceLine || 'General';
 
     return (
       <Card className={cn(
         'border-l-4',
-        escalation.severity === 'emergent' ? 'border-l-red-500' : 'border-l-amber-500'
+        severity === 'emergent' ? 'border-l-red-500' : 'border-l-amber-500'
       )}>
         <CardContent className="pt-6">
           <div className="flex items-start justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline" className={cn(severityColors[escalation.severity])}>
-                  {escalation.severity.toUpperCase()}
+                <Badge variant="outline" className={cn(severityColors[severity])}>
+                  {severity.toUpperCase()}
                 </Badge>
                 <Badge variant="secondary">
                   Tier {escalation.current_tier}
                 </Badge>
-                <Badge variant={escalation.status === 'active' ? 'default' : 'secondary'}>
+                <Badge variant={escalation.status === 'pending' ? 'default' : 'secondary'}>
                   {escalation.status}
                 </Badge>
               </div>
 
               <div>
-                <p className="font-medium text-lg">{escalation.service_line?.name}</p>
-                {escalation.patient_reference && (
-                  <p className="text-sm text-muted-foreground">Ref: {escalation.patient_reference}</p>
+                <p className="font-medium text-lg">{serviceLine}</p>
+                {escalation.patient_name && (
+                  <p className="text-sm text-muted-foreground">Patient: {escalation.patient_name}</p>
                 )}
               </div>
 
@@ -142,11 +159,11 @@ const EscalationManagementPage = () => {
                 </p>
                 <p className="flex items-center gap-2 text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  Initiated: {format(new Date(escalation.initiated_at), 'h:mm:ss a')}
+                  Initiated: {format(new Date(initiatedAt), 'h:mm:ss a')}
                 </p>
                 <p className="flex items-center gap-2 text-muted-foreground">
                   <User className="h-4 w-4" />
-                  By: {escalation.initiated_by}
+                  Provider: {escalation.assigned_provider_name || 'Pending'}
                 </p>
               </div>
 
@@ -233,7 +250,7 @@ const EscalationManagementPage = () => {
               providerCallSid={(escalation as any).provider_call_sid || null}
               patientCallSid={(escalation as any).patient_call_sid || null}
               callbackFailureReason={(escalation as any).callback_failure_reason || null}
-              patientName={(escalation as any).patient_name || escalation.patient_reference}
+              patientName={escalation.patient_name}
               callbackNumber={(escalation as any).callback_number}
               summarySentAt={(escalation as any).summary_sent_at || null}
               userRole="admin"
@@ -250,16 +267,26 @@ const EscalationManagementPage = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Escalation Management</h1>
-            <p className="text-muted-foreground mt-1">Monitor and manage active escalations</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold tracking-tight">Escalation Management</h1>
+              {isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+            </div>
+            <p className="text-muted-foreground mt-1">
+              Monitor and manage active escalations
+              <span className="ml-2 text-xs">(Real-time updates enabled)</span>
+            </p>
           </div>
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-destructive hover:bg-destructive/90">
-                <AlertTriangle className="h-4 w-4" />
-                Start Escalation
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={refetch} disabled={isLoading}>
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+            </Button>
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 bg-destructive hover:bg-destructive/90">
+                  <AlertTriangle className="h-4 w-4" />
+                  Start Escalation
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Initiate Escalation</DialogTitle>
@@ -315,6 +342,7 @@ const EscalationManagementPage = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Physician Guarantee - Always Visible */}
@@ -331,7 +359,7 @@ const EscalationManagementPage = () => {
           <Card>
             <CardContent className="pt-6">
               <div className="text-3xl font-bold text-amber-600">
-                {escalations.filter(e => e.severity === 'emergent' && e.status === 'active').length}
+                {dbEscalations.filter(e => e.triage_level === 'emergent' && e.status === 'pending').length}
               </div>
               <p className="text-sm text-muted-foreground">Emergent</p>
             </CardContent>
@@ -368,9 +396,9 @@ const EscalationManagementPage = () => {
             {activeEscalations.length > 0 && (
               <ProviderAcknowledgePanel
                 escalationId={activeEscalations[0].id}
-                severity={activeEscalations[0].severity}
-                initiatedAt={activeEscalations[0].initiated_at}
-                patientReference={activeEscalations[0].patient_reference}
+                severity={activeEscalations[0].triage_level === 'emergent' ? 'emergent' : 'urgent'}
+                initiatedAt={activeEscalations[0].created_at}
+                patientReference={activeEscalations[0].patient_name || undefined}
                 currentTier={activeEscalations[0].current_tier}
                 onAcknowledge={handleProviderAcknowledge}
               />
