@@ -190,10 +190,9 @@ interface IntakeData {
   hasRecentSurgery?: boolean;
   // Red flag answers
   hasVisionLoss?: boolean;
-  visionLossSeverity?: 'complete' | 'partial' | 'blur' | 'none' | 'severe';
+  visionLossSeverity?: 'complete' | 'partial' | 'blur' | 'none';
   visionLossOnset?: 'sudden' | 'gradual' | 'unknown';
   hasFlashesFloaters?: boolean;
-  eyePainLevel?: 'none' | 'mild' | 'moderate' | 'severe';
   flashesFloatersNew?: boolean;
   hasCurtainShadow?: boolean;
   eyePainLevel?: 'none' | 'mild' | 'moderate' | 'severe';
