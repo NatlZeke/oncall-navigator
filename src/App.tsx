@@ -35,6 +35,7 @@ import CallAnalyticsDashboardPage from "./pages/CallAnalyticsDashboardPage";
 import PrescriptionQueuePage from "./pages/PrescriptionQueuePage";
 import ProviderRoutingPage from "./pages/ProviderRoutingPage";
 import AuthorizedUsersPage from "./pages/AuthorizedUsersPage";
+import IntakeFlowReviewPage from "./pages/IntakeFlowReviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/auth" element={<AuthPage />} />
+              <Route path="/intake-flow" element={<IntakeFlowReviewPage />} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
               <Route path="/operator" element={<ProtectedRoute><OperatorView /></ProtectedRoute>} />
