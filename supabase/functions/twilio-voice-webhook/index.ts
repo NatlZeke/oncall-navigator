@@ -1278,12 +1278,20 @@ function generateCallbackNumberQuestion(baseUrl: string): string {
 </Response>`;
 }
 
+function formatPhoneDigitByDigit(phone: string): string {
+  // Extract just the digits
+  const digitsOnly = phone.replace(/\D/g, '');
+  // Add a space between each digit for clear pronunciation
+  return digitsOnly.split('').join(' . ');
+}
+
 function generateCallbackConfirmation(callback: string, baseUrl: string): string {
+  const digitByDigit = formatPhoneDigitByDigit(callback);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, correct, that's right">
-    <Say voice="Polly.Joanna-Neural">I have ${escapeXml(callback)}. Is that correct?</Say>
+    <Say voice="Polly.Joanna-Neural">I have ${escapeXml(digitByDigit)}. Is that correct?</Say>
     <Pause length="1"/>
     <Say voice="Polly.Joanna-Neural">Press 1 for yes, 2 to re-enter.</Say>
   </Gather>
