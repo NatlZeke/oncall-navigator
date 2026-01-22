@@ -1,202 +1,143 @@
 import { MainLayout } from '@/components/MainLayout';
 import { useApp } from '@/contexts/AppContext';
-import { getServiceLinesForOffice, mockEscalationPaths } from '@/data/mockData';
-import { Phone, Mail, MessageSquare, ArrowRight, Plus, Settings, Clock } from 'lucide-react';
+import { Phone, Mail, ArrowRight, Settings, Clock, Shield, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const EscalationPage = () => {
   const { currentOffice } = useApp();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
-
-  const serviceLines = getServiceLinesForOffice(currentOffice.id);
-  const escalations = mockEscalationPaths.filter((e) => e.office_id === currentOffice.id);
-
-  const getMethodIcon = (method: string) => {
-    switch (method) {
-      case 'call': return <Phone className="h-4 w-4" />;
-      case 'sms': return <MessageSquare className="h-4 w-4" />;
-      case 'email': return <Mail className="h-4 w-4" />;
-      default: return <Phone className="h-4 w-4" />;
-    }
-  };
 
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Escalation Paths</h1>
-            <p className="text-muted-foreground mt-1">Configure contact escalation for each service line</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight">Escalation Path</h1>
+              <Badge variant="outline" className="gap-1">
+                <Shield className="h-3 w-3" />
+                Unified
+              </Badge>
+            </div>
+            <p className="text-muted-foreground mt-1">
+              Single escalation path for all Ophthalmology After-Hours calls
+            </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Escalation Path
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Create Escalation Path</DialogTitle>
-                <DialogDescription>Define the contact escalation for a service line.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Service Line</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select service line" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {serviceLines.map((sl) => (
-                        <SelectItem key={sl.id} value={sl.id}>{sl.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Tier 1 Contact</Label>
-                  <Input placeholder="e.g., Primary On-Call Provider" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tier 2 Contact</Label>
-                  <Input placeholder="e.g., Backup On-Call Provider" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tier 3 Contact</Label>
-                  <Input placeholder="e.g., Office Manager: (555) 123-4567" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Contact Method</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select method" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="call">Phone Call</SelectItem>
-                        <SelectItem value="sms">SMS</SelectItem>
-                        <SelectItem value="email">Email</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Auto-Escalate After</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Minutes" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 minutes</SelectItem>
-                        <SelectItem value="10">10 minutes</SelectItem>
-                        <SelectItem value="15">15 minutes</SelectItem>
-                        <SelectItem value="30">30 minutes</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => setIsDialogOpen(false)}>Create</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
 
-        {/* Escalation Paths */}
-        <div className="space-y-4">
-          {serviceLines.map((sl) => {
-            const escalation = escalations.find((e) => e.service_line_id === sl.id);
+        {/* Unified Escalation Notice */}
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Unified After-Hours Coverage</AlertTitle>
+          <AlertDescription>
+            All after-hours calls route through a single "Ophthalmology After-Hours" path. 
+            There are no separate triage paths for specialized surgeries (LASIK, Cataract, etc.). 
+            The AI intake never asks callers to choose a specialty.
+          </AlertDescription>
+        </Alert>
 
-            return (
-              <div key={sl.id} className="rounded-xl border bg-card overflow-hidden">
-                <div className="flex items-center justify-between p-4 border-b bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Settings className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold">{sl.name}</h3>
-                      <p className="text-sm text-muted-foreground">Escalation Path</p>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">Edit</Button>
+        {/* Single Unified Escalation Path */}
+        <Card>
+          <CardHeader className="bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Settings className="h-5 w-5" />
                 </div>
-
-                {escalation ? (
-                  <div className="p-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      {getMethodIcon(escalation.method)}
-                      <Badge variant="outline">{escalation.method.toUpperCase()}</Badge>
-                      <span className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        Auto-escalate after {escalation.auto_escalate_after_minutes} min
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">1</div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Tier 1</p>
-                          <p className="font-medium">{escalation.tier1_contact}</p>
-                        </div>
-                      </div>
-                      <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-secondary-foreground font-bold">2</div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Tier 2</p>
-                          <p className="font-medium">{escalation.tier2_contact}</p>
-                        </div>
-                      </div>
-                      <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/10 text-warning font-bold">3</div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Tier 3</p>
-                          <p className="font-medium">{escalation.tier3_contact}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-8 text-center">
-                    <p className="text-muted-foreground">No escalation path configured</p>
-                    <Button variant="outline" size="sm" className="mt-2" onClick={() => setIsDialogOpen(true)}>
-                      Configure Now
-                    </Button>
-                  </div>
-                )}
+                <div>
+                  <CardTitle className="text-lg">Ophthalmology After-Hours</CardTitle>
+                  <CardDescription>Unified escalation for all patient types</CardDescription>
+                </div>
               </div>
-            );
-          })}
-        </div>
+              <Badge>Active</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Phone className="h-4 w-4 text-muted-foreground" />
+              <Badge variant="outline">SMS + PHONE CALL</Badge>
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Auto-escalate after 10 min
+              </span>
+            </div>
+
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">1</div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tier 1</p>
+                  <p className="font-medium">On-Call Provider</p>
+                  <p className="text-sm text-muted-foreground">SMS summary → Phone if no response</p>
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-secondary-foreground font-bold">2</div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tier 2</p>
+                  <p className="font-medium">Office Manager</p>
+                  <p className="text-sm text-muted-foreground">Escalated if Tier 1 unresponsive</p>
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/10 text-warning font-bold">3</div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tier 3</p>
+                  <p className="font-medium">Practice Administrator</p>
+                  <p className="text-sm text-muted-foreground">Final escalation point</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Coverage Scope */}
+            <div className="mt-6 pt-6 border-t">
+              <h4 className="font-medium mb-3 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                Coverage Scope (Internal Reference)
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {['Emergencies', 'Post-Op Concerns', 'Urgent Symptoms', 'Prescription Requests', 'General Inquiries'].map((scope) => (
+                  <Badge key={scope} variant="secondary">{scope}</Badge>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground mt-3">
+                All patient types are handled through this single path. Provider routing may vary based on 
+                the on-call provider's coverage type (own patients vs all patients), but the escalation 
+                path remains the same.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Removed Paths Notice */}
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle className="text-base text-muted-foreground">Previously Separate Paths (Removed)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {['Cataract Surgery', 'LASIK & Refractive', 'Glaucoma', 'Oculoplastics'].map((name) => (
+                <div key={name} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                  <div className="flex h-8 w-8 items-center justify-center rounded bg-muted text-muted-foreground text-sm">
+                    —
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground line-through">{name}</p>
+                    <p className="text-xs text-muted-foreground">Merged into unified path</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Office Contacts */}
         <div className="rounded-xl border bg-card p-5">

@@ -101,48 +101,38 @@ export const mockUsers: User[] = [
   },
 ];
 
+// UNIFIED SERVICE LINE: All after-hours routing goes through "Ophthalmology After-Hours"
+// This consolidates previous specialized surgery lines (LASIK, Cataract, etc.) into one path
+// Specialty categories exist only as internal metadata tags, not separate call trees
 export const mockServiceLines: ServiceLine[] = [
   {
-    id: 'sl-1',
+    id: 'sl-ophth-afterhours',
     office_id: 'office-1',
-    name: 'Cataract Surgery',
-    requires_backup: true,
+    name: 'Ophthalmology After-Hours',
+    requires_backup: false, // Single provider model
     coverage_required: true,
     created_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'sl-2',
-    office_id: 'office-1',
-    name: 'Glaucoma',
-    requires_backup: true,
-    coverage_required: true,
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'sl-3',
-    office_id: 'office-1',
-    name: 'Oculoplastics',
-    requires_backup: false,
-    coverage_required: true,
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'sl-4',
+    id: 'sl-ophth-afterhours-2',
     office_id: 'office-2',
-    name: 'General Ophthalmology',
-    requires_backup: true,
-    coverage_required: true,
-    created_at: '2024-01-15T00:00:00Z',
-  },
-  {
-    id: 'sl-5',
-    office_id: 'office-2',
-    name: 'LASIK & Refractive',
-    requires_backup: false,
+    name: 'Ophthalmology After-Hours',
+    requires_backup: false, // Single provider model
     coverage_required: true,
     created_at: '2024-01-15T00:00:00Z',
   },
 ];
+
+// Legacy specialty categories - kept as metadata tags only, NOT separate routing paths
+export const SPECIALTY_TAGS = [
+  'Cataract Surgery',
+  'Glaucoma',
+  'Oculoplastics',
+  'LASIK & Refractive',
+  'Retina',
+  'Pediatric',
+  'Cornea',
+] as const;
 
 // Generate shifts for the current week
 const now = new Date();
