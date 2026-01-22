@@ -16,8 +16,8 @@ import {
 import { format } from 'date-fns';
 
 export default function IntakeFlowReviewPage() {
-  const lastUpdated = new Date();
-  const protocolVersion = "1.0.3";
+  const lastUpdated = new Date('2026-01-22');
+  const protocolVersion = "2.0.0";
 
   return (
     <div className="min-h-screen bg-background">
@@ -63,16 +63,21 @@ export default function IntakeFlowReviewPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                <p className="text-2xl font-bold text-warning">GATE</p>
+                <p className="text-sm text-muted-foreground">Patient Verification</p>
+                <p className="text-xs mt-1">Non-patients blocked first</p>
+              </div>
               <div className="p-4 rounded-lg bg-background border">
                 <p className="text-2xl font-bold text-primary">3-Tier</p>
                 <p className="text-sm text-muted-foreground">Disposition System</p>
-                <p className="text-xs mt-1">ER NOW → Urgent Callback → Next Business Day</p>
+                <p className="text-xs mt-1">ER NOW → Callback → Next Day</p>
               </div>
-              <div className="p-4 rounded-lg bg-background border">
-                <p className="text-2xl font-bold text-primary">6</p>
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                <p className="text-2xl font-bold text-destructive">4</p>
                 <p className="text-sm text-muted-foreground">Red Flag Questions</p>
-                <p className="text-xs mt-1">Ophthalmology-specific screening</p>
+                <p className="text-xs mt-1">Simplified from 6+</p>
               </div>
               <div className="p-4 rounded-lg bg-background border">
                 <p className="text-2xl font-bold text-primary">100%</p>
