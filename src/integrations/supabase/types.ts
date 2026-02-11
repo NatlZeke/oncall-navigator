@@ -501,6 +501,7 @@ export type Database = {
           is_active: boolean | null
           name: string
           phone_numbers: string[]
+          spanish_enabled: boolean
           timezone: string | null
           updated_at: string | null
         }
@@ -512,6 +513,7 @@ export type Database = {
           is_active?: boolean | null
           name: string
           phone_numbers?: string[]
+          spanish_enabled?: boolean
           timezone?: string | null
           updated_at?: string | null
         }
@@ -523,6 +525,7 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           phone_numbers?: string[]
+          spanish_enabled?: boolean
           timezone?: string | null
           updated_at?: string | null
         }
