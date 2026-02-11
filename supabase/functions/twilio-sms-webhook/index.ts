@@ -182,8 +182,13 @@ async function handleProviderReply(
   const now = new Date().toISOString();
 
   // Handle each action type
-  switch (action) {
-    case 'ACK':
+  switch (action.action) {
+    case 'ACK': {
+      const ackTime = new Date();
+      const createdAt = new Date(escalation.created_at);
+      const elapsedMinutes = (ackTime.getTime() - createdAt.getTime()) / (1000 * 60);
+      const slaTarget = escalation.sla_target_minutes || 30;
+
       await supabase.from('escalations').update({
         status: 'acknowledged',
         acknowledged_at: now,
@@ -192,13 +197,23 @@ async function handleProviderReply(
         ack_type: 'acknowledged'
       }).eq('id', escalationId);
 
+      // Record SLA result
+      await supabase.from('sla_results').upsert({
+        escalation_id: escalationId,
+        office_id: escalation.office_id,
+        severity: escalation.triage_level,
+        status: elapsedMinutes <= slaTarget ? 'met' : 'breached',
+        time_to_ack_minutes: Math.round(elapsedMinutes),
+      }, { onConflict: 'escalation_id' });
+
       await supabase.from('escalation_events').insert({
         escalation_id: escalationId,
         event_type: 'provider_sms_reply',
-        payload: { action: 'ACK', raw_reply: rawBody, replied_at: now }
+        payload: { action: 'ACK', raw_reply: rawBody, replied_at: now, sla_elapsed_minutes: Math.round(elapsedMinutes), sla_met: elapsedMinutes <= slaTarget }
       });
 
       return `Acknowledged. Escalation ${escalationId.substring(0, 8)} marked as received. Timer stopped.`;
+    }
 
     case 'CALL': {
       // Validate callback eligibility
@@ -206,6 +221,11 @@ async function handleProviderReply(
       if (callbackValidation) {
         return callbackValidation;
       }
+
+      const callAckTime = new Date();
+      const callCreatedAt = new Date(escalation.created_at);
+      const callElapsedMinutes = (callAckTime.getTime() - callCreatedAt.getTime()) / (1000 * 60);
+      const callSlaTarget = escalation.sla_target_minutes || 30;
 
       // Update escalation status
       await supabase.from('escalations').update({
@@ -217,10 +237,19 @@ async function handleProviderReply(
         callback_status: 'queued'
       }).eq('id', escalationId);
 
+      // Record SLA result
+      await supabase.from('sla_results').upsert({
+        escalation_id: escalationId,
+        office_id: escalation.office_id,
+        severity: escalation.triage_level,
+        status: callElapsedMinutes <= callSlaTarget ? 'met' : 'breached',
+        time_to_ack_minutes: Math.round(callElapsedMinutes),
+      }, { onConflict: 'escalation_id' });
+
       await supabase.from('escalation_events').insert({
         escalation_id: escalationId,
         event_type: 'provider_sms_reply',
-        payload: { action: 'CALL', raw_reply: rawBody, replied_at: now }
+        payload: { action: 'CALL', raw_reply: rawBody, replied_at: now, override_number: action.overrideNumber || null, sla_elapsed_minutes: Math.round(callElapsedMinutes), sla_met: callElapsedMinutes <= callSlaTarget }
       });
 
       // Trigger the callback bridge
@@ -234,7 +263,11 @@ async function handleProviderReply(
             'Authorization': `Bearer ${supabaseKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ action: 'initiate', escalation_id: escalationId })
+          body: JSON.stringify({ 
+            action: 'initiate', 
+            escalation_id: escalationId,
+            override_callback_number: action.overrideNumber || undefined
+          })
         });
 
         const bridgeResult = await bridgeResponse.json();
@@ -255,7 +288,12 @@ async function handleProviderReply(
       }
     }
 
-    case 'ER':
+    case 'ER': {
+      const erAckTime = new Date();
+      const erCreatedAt = new Date(escalation.created_at);
+      const erElapsedMinutes = (erAckTime.getTime() - erCreatedAt.getTime()) / (1000 * 60);
+      const erSlaTarget = escalation.sla_target_minutes || 30;
+
       await supabase.from('escalations').update({
         status: 'acknowledged',
         acknowledged_at: escalation.acknowledged_at || now,
@@ -265,13 +303,23 @@ async function handleProviderReply(
         ack_type: 'er_advised'
       }).eq('id', escalationId);
 
+      // Record SLA result
+      await supabase.from('sla_results').upsert({
+        escalation_id: escalationId,
+        office_id: escalation.office_id,
+        severity: escalation.triage_level,
+        status: erElapsedMinutes <= erSlaTarget ? 'met' : 'breached',
+        time_to_ack_minutes: Math.round(erElapsedMinutes),
+      }, { onConflict: 'escalation_id' });
+
       await supabase.from('escalation_events').insert({
         escalation_id: escalationId,
         event_type: 'provider_sms_reply',
-        payload: { action: 'ER', raw_reply: rawBody, replied_at: now, disposition_override: 'ER_RECOMMENDED' }
+        payload: { action: 'ER', raw_reply: rawBody, replied_at: now, disposition_override: 'ER_RECOMMENDED', sla_elapsed_minutes: Math.round(erElapsedMinutes), sla_met: erElapsedMinutes <= erSlaTarget }
       });
 
       return `ER advised for patient. Disposition override logged.`;
+    }
 
     case 'RESOLVED':
       await supabase.from('escalations').update({

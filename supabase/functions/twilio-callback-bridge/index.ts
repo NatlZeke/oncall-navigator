@@ -8,6 +8,8 @@ const corsHeaders = {
 };
 
 // Get caller ID - use Twilio phone number or office-specific override
+// NOTE: Office caller IDs MUST be verified in the Twilio console before use.
+// If not verified, Twilio rejects the call with error 21212.
 function getCallerId(officeId: string): string {
   const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
   
@@ -17,7 +19,13 @@ function getCallerId(officeId: string): string {
     'office-2': '+15125281155',
   };
   
-  return officeCallerIds[officeId] || twilioPhone || '';
+  const officeCid = officeCallerIds[officeId];
+  if (officeCid) {
+    console.log(`Using office caller ID for ${officeId}: ${officeCid} — ensure this number is verified in Twilio console`);
+    return officeCid;
+  }
+  
+  return twilioPhone || '';
 }
 
 // Validate Twilio webhook signature
@@ -67,7 +75,7 @@ async function validateTwilioSignature(
 type CallbackStatus = 'queued' | 'provider_dialing' | 'provider_answered' | 'patient_dialing' | 'connected' | 'failed' | 'canceled' | 'completed';
 
 // Initiate two-leg bridge call
-async function initiateCallbackBridge(supabase: any, escalationId: string): Promise<{ success: boolean; error?: string; providerCallSid?: string }> {
+async function initiateCallbackBridge(supabase: any, escalationId: string, overrideCallbackNumber?: string): Promise<{ success: boolean; error?: string; providerCallSid?: string }> {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -94,9 +102,13 @@ async function initiateCallbackBridge(supabase: any, escalationId: string): Prom
   }
 
   const providerPhone = escalation.assigned_provider_phone;
-  const patientCallback = escalation.callback_number;
+  const patientCallback = overrideCallbackNumber || escalation.callback_number;
   const officeId = escalation.office_id;
   const callerId = getCallerId(officeId);
+  
+  if (overrideCallbackNumber) {
+    console.log(`Using override callback number: ${overrideCallbackNumber} (original: ${escalation.callback_number})`);
+  }
   
   if (!callerId) {
     return { success: false, error: 'No caller ID configured. Set TWILIO_PHONE_NUMBER secret.' };
@@ -116,7 +128,8 @@ async function initiateCallbackBridge(supabase: any, escalationId: string): Prom
       provider_phone: providerPhone,
       patient_callback: patientCallback,
       caller_id: callerId,
-      initiated_at: new Date().toISOString()
+      initiated_at: new Date().toISOString(),
+      ...(overrideCallbackNumber ? { override_callback_number: overrideCallbackNumber, original_callback_number: escalation.callback_number } : {})
     }
   });
 
@@ -317,7 +330,7 @@ serve(async (req) => {
     const contentType = req.headers.get('content-type') || '';
     
     if (contentType.includes('application/json') || (!action && !contentType.includes('form'))) {
-      let body: { action?: string; escalation_id?: string } = {};
+      let body: { action?: string; escalation_id?: string; override_callback_number?: string } = {};
       
       try {
         const text = await req.text();
@@ -338,7 +351,7 @@ serve(async (req) => {
           });
         }
 
-        const result = await initiateCallbackBridge(supabase, body.escalation_id);
+        const result = await initiateCallbackBridge(supabase, body.escalation_id, body.override_callback_number);
         
         return new Response(JSON.stringify(result), {
           status: result.success ? 200 : 400,

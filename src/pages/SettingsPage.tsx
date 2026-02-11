@@ -1,47 +1,107 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/MainLayout';
 import { useApp } from '@/contexts/AppContext';
-import { getOfficeSettings, mockOffices } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Settings, Shield, Clock, Users, Bell, Lock } from 'lucide-react';
+import { Shield, Users, Bell, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { OfficeSettings } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
+
+interface OfficeSettingsData {
+  require_backup_provider: boolean;
+  require_admin_approval_for_swaps: boolean;
+  auto_escalation_enabled: boolean;
+  auto_escalation_minutes: number;
+  max_consecutive_shifts_warning: number;
+  publish_locks_schedule: boolean;
+}
+
+const defaultSettings: OfficeSettingsData = {
+  require_backup_provider: false,
+  require_admin_approval_for_swaps: true,
+  auto_escalation_enabled: true,
+  auto_escalation_minutes: 30,
+  max_consecutive_shifts_warning: 7,
+  publish_locks_schedule: true,
+};
 
 const SettingsPage = () => {
   const { currentOffice } = useApp();
-  
+  const [settings, setSettings] = useState<OfficeSettingsData>(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!currentOffice) return;
+    const fetchSettings = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('office_settings')
+        .select('*')
+        .eq('office_id', currentOffice.id)
+        .single();
+
+      if (!error && data) {
+        setSettings({
+          require_backup_provider: (data as any).require_backup_provider ?? defaultSettings.require_backup_provider,
+          require_admin_approval_for_swaps: (data as any).require_admin_approval_for_swaps ?? defaultSettings.require_admin_approval_for_swaps,
+          auto_escalation_enabled: (data as any).auto_escalation_enabled ?? defaultSettings.auto_escalation_enabled,
+          auto_escalation_minutes: (data as any).auto_escalation_minutes ?? defaultSettings.auto_escalation_minutes,
+          max_consecutive_shifts_warning: (data as any).max_consecutive_shifts_warning ?? defaultSettings.max_consecutive_shifts_warning,
+          publish_locks_schedule: (data as any).publish_locks_schedule ?? defaultSettings.publish_locks_schedule,
+        });
+      }
+      setLoading(false);
+    };
+    fetchSettings();
+  }, [currentOffice]);
+
   if (!currentOffice) {
     return <MainLayout><div>No office selected</div></MainLayout>;
   }
 
-  const initialSettings = getOfficeSettings(currentOffice.id);
-  const [settings, setSettings] = useState<OfficeSettings>(initialSettings);
-
-  const handleToggle = (key: keyof OfficeSettings) => {
+  const handleToggle = (key: keyof OfficeSettingsData) => {
     if (typeof settings[key] === 'boolean') {
       setSettings({ ...settings, [key]: !settings[key] });
     }
   };
 
-  const handleNumberChange = (key: keyof OfficeSettings, value: number) => {
+  const handleNumberChange = (key: keyof OfficeSettingsData, value: number) => {
     setSettings({ ...settings, [key]: value });
   };
 
-  const handleSave = () => {
-    toast.success('Settings saved', {
-      description: 'Your office settings have been updated'
-    });
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('office_settings')
+      .upsert({ office_id: currentOffice.id, ...settings } as any);
+
+    if (error) {
+      toast.error('Failed to save settings');
+    } else {
+      toast.success('Settings saved', { description: 'Your office settings have been updated' });
+    }
+    setSaving(false);
   };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading settings...
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in max-w-4xl">
-        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Office Settings</h1>
           <p className="text-muted-foreground mt-1">Configure on-call operations for {currentOffice.name}</p>
@@ -64,14 +124,12 @@ const SettingsPage = () => {
                   All shifts must have a backup provider assigned before publishing
                 </p>
               </div>
-              <Switch 
+              <Switch
                 checked={settings.require_backup_provider}
                 onCheckedChange={() => handleToggle('require_backup_provider')}
               />
             </div>
-            
             <Separator />
-            
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">Max Consecutive Shifts Warning</Label>
@@ -80,8 +138,8 @@ const SettingsPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Input 
-                  type="number" 
+                <Input
+                  type="number"
                   className="w-20"
                   value={settings.max_consecutive_shifts_warning}
                   onChange={(e) => handleNumberChange('max_consecutive_shifts_warning', parseInt(e.target.value) || 3)}
@@ -111,7 +169,7 @@ const SettingsPage = () => {
                   Swaps must be approved by a scheduler or admin after provider acceptance
                 </p>
               </div>
-              <Switch 
+              <Switch
                 checked={settings.require_admin_approval_for_swaps}
                 onCheckedChange={() => handleToggle('require_admin_approval_for_swaps')}
               />
@@ -136,14 +194,12 @@ const SettingsPage = () => {
                   Automatically escalate to the next tier if no response within the timeout
                 </p>
               </div>
-              <Switch 
+              <Switch
                 checked={settings.auto_escalation_enabled}
                 onCheckedChange={() => handleToggle('auto_escalation_enabled')}
               />
             </div>
-            
             <Separator />
-            
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">Auto-Escalation Timer</Label>
@@ -152,8 +208,8 @@ const SettingsPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Input 
-                  type="number" 
+                <Input
+                  type="number"
                   className="w-20"
                   value={settings.auto_escalation_minutes}
                   onChange={(e) => handleNumberChange('auto_escalation_minutes', parseInt(e.target.value) || 10)}
@@ -184,7 +240,7 @@ const SettingsPage = () => {
                   Prevent edits to published schedules unless unlocked by an admin
                 </p>
               </div>
-              <Switch 
+              <Switch
                 checked={settings.publish_locks_schedule}
                 onCheckedChange={() => handleToggle('publish_locks_schedule')}
               />
@@ -194,10 +250,11 @@ const SettingsPage = () => {
 
         {/* Save Button */}
         <div className="flex justify-end gap-4">
-          <Button variant="outline" onClick={() => setSettings(initialSettings)}>
+          <Button variant="outline" onClick={() => setSettings(defaultSettings)}>
             Reset to Default
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Save Changes
           </Button>
         </div>
