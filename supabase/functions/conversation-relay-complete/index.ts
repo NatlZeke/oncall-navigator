@@ -16,6 +16,7 @@ interface RelayCompletePayload {
   officeId: string;
   officeName: string;
   lang: 'en' | 'es';
+  serviceLine?: string;
   intake: {
     patientName?: string;
     dateOfBirth?: string;
@@ -202,7 +203,7 @@ serve(async (req) => {
     }
 
     const patientLanguage = lang === 'es' ? 'Spanish' : 'English';
-    const serviceLine = 'General Ophthalmology';
+    const serviceLine = payload.serviceLine || 'General Ophthalmology';
     const callbackNumber = intake.callbackNumber || callerPhone;
 
     // 3. Execute disposition logic — identical to twilio-voice-webhook handleDisposition

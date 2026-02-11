@@ -46,13 +46,14 @@ const SettingsPage = () => {
         .single();
 
       if (!error && data) {
+        const d = data as OfficeSettingsData & { office_id: string };
         setSettings({
-          require_backup_provider: (data as any).require_backup_provider ?? defaultSettings.require_backup_provider,
-          require_admin_approval_for_swaps: (data as any).require_admin_approval_for_swaps ?? defaultSettings.require_admin_approval_for_swaps,
-          auto_escalation_enabled: (data as any).auto_escalation_enabled ?? defaultSettings.auto_escalation_enabled,
-          auto_escalation_minutes: (data as any).auto_escalation_minutes ?? defaultSettings.auto_escalation_minutes,
-          max_consecutive_shifts_warning: (data as any).max_consecutive_shifts_warning ?? defaultSettings.max_consecutive_shifts_warning,
-          publish_locks_schedule: (data as any).publish_locks_schedule ?? defaultSettings.publish_locks_schedule,
+          require_backup_provider: d.require_backup_provider ?? defaultSettings.require_backup_provider,
+          require_admin_approval_for_swaps: d.require_admin_approval_for_swaps ?? defaultSettings.require_admin_approval_for_swaps,
+          auto_escalation_enabled: d.auto_escalation_enabled ?? defaultSettings.auto_escalation_enabled,
+          auto_escalation_minutes: d.auto_escalation_minutes ?? defaultSettings.auto_escalation_minutes,
+          max_consecutive_shifts_warning: d.max_consecutive_shifts_warning ?? defaultSettings.max_consecutive_shifts_warning,
+          publish_locks_schedule: d.publish_locks_schedule ?? defaultSettings.publish_locks_schedule,
         });
       }
       setLoading(false);
@@ -78,7 +79,7 @@ const SettingsPage = () => {
     setSaving(true);
     const { error } = await supabase
       .from('office_settings')
-      .upsert({ office_id: currentOffice.id, ...settings } as any);
+      .upsert({ office_id: currentOffice.id, ...settings });
 
     if (error) {
       toast.error('Failed to save settings');

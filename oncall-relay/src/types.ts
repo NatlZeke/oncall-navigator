@@ -4,7 +4,7 @@ export type Disposition = 'ER_NOW' | 'URGENT_CALLBACK' | 'NEXT_BUSINESS_DAY';
 // All triage stages — must match the stages in twilio-voice-webhook/index.ts
 export type TriageStage =
   | 'language_gate' | 'established_gate' | 'collect_name' | 'ask_dob'
-  | 'ask_callback' | 'ask_patient_doctor' | 'ask_postop' | 'postop_complaint'
+  | 'ask_callback' | 'confirm_callback' | 'ask_patient_doctor' | 'ask_postop' | 'postop_complaint'
   | 'redflag_1' | 'redflag_2' | 'redflag_3' | 'redflag_4'
   | 'brief_complaint' | 'stability_check'
   | 'prescription_name' | 'prescription_callback' | 'prescription_medication'
@@ -97,6 +97,7 @@ export interface TriageState {
   retryCounts: Record<string, number>;
   onCallProvider: { name: string; phone: string };
   providerDirectory: Record<string, { name: string; phone: string }>;
+  requiresPatientDoctorConfirmation: boolean;
 }
 
 export interface TriageResult {

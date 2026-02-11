@@ -245,10 +245,50 @@ export function processInput(
         return transitionAfterCallback(state);
       }
 
-      // Caller provided a different number
+      // Caller provided a different number — confirm before proceeding
       state.intake.callbackNumber = input || digit || state.callerPhone;
-      state.intake.callbackConfirmed = true;
-      return transitionAfterCallback(state);
+      return {
+        responseText: t(state.lang,
+          `I have your callback number as ${state.intake.callbackNumber}. Is that correct?`,
+          `Tengo su número de devolución de llamada como ${state.intake.callbackNumber}. ¿Es correcto?`
+        ),
+        nextStage: 'confirm_callback',
+        endCall: false,
+      };
+    }
+
+    // ========================================================================
+    // CONFIRM CALLBACK
+    // ========================================================================
+    case 'confirm_callback': {
+      if (!input && !digit) {
+        return handleRetry(state, 'confirm_callback',
+          t(state.lang,
+            `I have ${state.intake.callbackNumber}. Is that correct? Say yes or no.`,
+            `Tengo ${state.intake.callbackNumber}. ¿Es correcto? Diga sí o no.`
+          ),
+          () => {
+            // Retry exhausted — accept current number
+            state.intake.callbackConfirmed = true;
+            return transitionAfterCallback(state);
+          }
+        );
+      }
+
+      if (isAffirmative(input) || digit === '1') {
+        state.intake.callbackConfirmed = true;
+        return transitionAfterCallback(state);
+      }
+
+      // Caller said no — ask for the number again
+      return {
+        responseText: t(state.lang,
+          "No problem. What is the best number to reach you?",
+          "No hay problema. ¿Cuál es el mejor número para contactarle?"
+        ),
+        nextStage: 'ask_callback',
+        endCall: false,
+      };
     }
 
     // ========================================================================
@@ -727,8 +767,8 @@ function askCallback(state: TriageState): TriageResult {
 }
 
 function transitionAfterCallback(state: TriageState): TriageResult {
-  // If there's a provider directory (multi-provider office), ask who their doctor is
-  if (Object.keys(state.providerDirectory).length > 0) {
+  // Only ask for patient's doctor when routing is 'own_patients_only'
+  if (state.requiresPatientDoctorConfirmation) {
     return {
       responseText: t(state.lang, "Who is your doctor at our office?", "¿Quién es su doctor en nuestra oficina?"),
       nextStage: 'ask_patient_doctor',
