@@ -64,25 +64,25 @@ async function validateTwilioSignature(
 // ============================================================================
 // OFFICE CONFIGURATION — 5A: Dynamic office lookup from DB
 // ============================================================================
-async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string }> {
+async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string; spanishEnabled: boolean }> {
   try {
     const { data: office, error } = await supabase
       .from('offices')
-      .select('id, name')
+      .select('id, name, spanish_enabled')
       .contains('phone_numbers', [calledPhone])
       .eq('is_active', true)
       .limit(1)
       .single();
 
     if (!error && office) {
-      return { officeId: office.id, officeName: office.name };
+      return { officeId: office.id, officeName: office.name, spanishEnabled: office.spanish_enabled ?? false };
     }
   } catch (err) {
     console.warn('Office lookup failed, using fallback:', err);
   }
 
   console.warn(`No office found for phone ${calledPhone}, using default`);
-  return { officeId: 'office-1', officeName: 'Hill Country Eye Center' };
+  return { officeId: 'office-1', officeName: 'Hill Country Eye Center', spanishEnabled: false };
 }
 
 interface OnCallInfo {
@@ -94,6 +94,7 @@ interface OnCallInfo {
   afterHoursEnd: string;
   requiresPatientDoctorConfirmation: boolean;
   providerDirectory: Record<string, { name: string; phone: string }>;
+  spanishEnabled: boolean;
 }
 
 // ============================================================================
@@ -155,6 +156,7 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
       afterHoursEnd: '08:00',
       requiresPatientDoctorConfirmation: false,
       providerDirectory,
+      spanishEnabled: officeInfo.spanishEnabled,
     };
   }
   
@@ -179,6 +181,7 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
     afterHoursEnd: assignment.after_hours_end,
     requiresPatientDoctorConfirmation: routingConfig?.routing_type === 'own_patients_only',
     providerDirectory,
+    spanishEnabled: officeInfo.spanishEnabled,
   };
 }
 
@@ -439,8 +442,14 @@ serve(async (req) => {
       // STEP 0: LANGUAGE GATE
       // ============================================================================
       case 'welcome':
-        twimlResponse = generateLanguageGate(supabaseUrl);
-        await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'language_gate' });
+        if (onCallInfo.spanishEnabled) {
+          twimlResponse = generateLanguageGate(supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'language_gate' });
+        } else {
+          // Spanish disabled — skip language gate, default to English
+          twimlResponse = generateWelcomeWithEstablishedGate(onCallInfo.officeName, supabaseUrl, 'en');
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'established_gate', language: 'en' });
+        }
         break;
 
       case 'language_gate': {

@@ -1,0 +1,1 @@
+ALTER TABLE public.offices ADD COLUMN spanish_enabled boolean NOT NULL DEFAULT false;
