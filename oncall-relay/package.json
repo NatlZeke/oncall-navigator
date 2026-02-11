@@ -1,0 +1,20 @@
+{
+  "name": "oncall-relay",
+  "version": "1.0.0",
+  "description": "Twilio ConversationRelay WebSocket server for OnCall Navigator",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.5.0",
+    "tsx": "^4.15.0"
+  }
+}
