@@ -1132,7 +1132,7 @@ async function handleDisposition(
   switch (disposition) {
     case 'ER_NOW': {
       const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'ER_NOW', officeId, lang);
-      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
+      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id, officeId);
       
       if (escalationResult?.id) {
         await updateEscalationWithSMS(supabase, escalationResult.id, smsResult);
@@ -1142,7 +1142,7 @@ async function handleDisposition(
       
     case 'URGENT_CALLBACK': {
       const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'URGENT_CALLBACK', officeId, lang);
-      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
+      const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id, officeId);
       
       if (escalationResult?.id) {
         await updateEscalationWithSMS(supabase, escalationResult.id, smsResult);
@@ -1397,7 +1397,8 @@ async function sendPreCallSMS(
   summary: PreCallSummary, 
   callSid: string,
   intakeData: IntakeData,
-  escalationId?: string
+  escalationId?: string,
+  officeId?: string
 ): Promise<{ success: boolean; smsBody: string; templateUsed: string; twilioSid?: string }> {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -1454,7 +1455,7 @@ async function sendPreCallSMS(
     await supabase.from('notification_logs').insert({
       notification_type: 'escalation_sms',
       recipient_phone: providerPhone,
-      office_id: summary.officeName,
+      office_id: officeId || summary.officeName,
       content: { sms_body: smsResult.body, template_used: smsResult.templateUsed, call_sid: callSid },
       status: 'sent',
       twilio_sid: result.sid,
