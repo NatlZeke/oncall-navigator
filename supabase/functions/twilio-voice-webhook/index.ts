@@ -1598,7 +1598,15 @@ function generateConversationRelayTwiml(
 
 function formatPhoneDigitByDigit(phone: string): string {
   const digitsOnly = phone.replace(/\D/g, '');
-  return digitsOnly.split('').join(' . ');
+  // Group as area-code, prefix, line (e.g. "512. 528. 1144") for natural pacing
+  if (digitsOnly.length === 10) {
+    return `${digitsOnly.slice(0, 3)}, ${digitsOnly.slice(3, 6)}, ${digitsOnly.slice(6)}`;
+  }
+  if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+    return `${digitsOnly.slice(1, 4)}, ${digitsOnly.slice(4, 7)}, ${digitsOnly.slice(7)}`;
+  }
+  // Fallback: group in threes
+  return digitsOnly.match(/.{1,3}/g)?.join(', ') || digitsOnly;
 }
 
 // ============================================================================
@@ -1822,7 +1830,6 @@ function generateDOBQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const msg = lang === 'es' ? '¿Cuál es su fecha de nacimiento?' : 'What is your date of birth?';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${msg}</Say>
   </Gather>
@@ -1836,7 +1843,6 @@ function generateCallbackNumberQuestion(baseUrl: string, lang: Lang = 'en'): str
   const msg = lang === 'es' ? '¿Cuál es el mejor número para devolverle la llamada?' : "What's the best callback number?";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${msg}</Say>
   </Gather>
@@ -1854,10 +1860,8 @@ function generateCallbackWithDefault(callerPhone: string, baseUrl: string, lang:
     : [`Can I reach you at ${escapeXml(digitByDigit)}?`, 'Press 1 for yes, or say or enter a different number.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1873,10 +1877,8 @@ function generateCallbackConfirmation(callback: string, baseUrl: string, lang: L
     : [`I have ${escapeXml(digitByDigit)}. Is that correct?`, 'Press 1 for yes, 2 to re-enter.', "yes, no, correct, that's right"];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1922,10 +1924,8 @@ function generatePostOpQuestionWithTransition(patientName: string | undefined, b
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${nameGreeting} ${safety}</Say>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${surgery}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1939,10 +1939,8 @@ function generatePostOpQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const [q, dtmf] = lang === 'es' ? ['¿Ha tenido cirugía de ojos en los últimos 14 días?', 'Oprima 1 para sí, 2 para no.'] : ['Have you had eye surgery in the last 14 days?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1958,7 +1956,6 @@ function generatePostOpComplaintQuestion(baseUrl: string, lang: Lang = 'en'): st
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
-  <Pause length="1"/>
   <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${prompt}</Say>
   </Gather>
@@ -1978,10 +1975,8 @@ function generateRedFlag1_VisionLoss(baseUrl: string, lang: Lang = 'en'): string
     : ['Are you having sudden vision loss or a major sudden change in vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -1997,10 +1992,8 @@ function generateRedFlag2_FlashesCurtain(baseUrl: string, lang: Lang = 'en'): st
     : ['Do you see new flashes or floaters together with a curtain or shadow in your vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -2014,10 +2007,8 @@ function generateRedFlag3_SeverePain(baseUrl: string, lang: Lang = 'en'): string
   const [q, dtmf] = lang === 'es' ? ['¿Tiene dolor severo en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.'] : ['Are you having severe eye pain right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -2031,10 +2022,8 @@ function generateRedFlag4_TraumaChemical(baseUrl: string, lang: Lang = 'en'): st
   const [q, dtmf] = lang === 'es' ? ['¿Hubo algún trauma en su ojo o exposición a químicos?', 'Oprima 1 para sí, 2 para no.'] : ['Was there any trauma to your eye or any chemical exposure?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -2050,7 +2039,6 @@ function generateBriefComplaintQuestion(baseUrl: string, lang: Lang = 'en'): str
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
-  <Pause length="1"/>
   <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${prompt}</Say>
   </Gather>
@@ -2066,10 +2054,8 @@ function generateStabilityQuestion(baseUrl: string, lang: Lang = 'en'): string {
     : ['Is this getting worse right now, or has it been about the same?', 'Press 1 if it\'s getting worse, or 2 if it\'s been about the same.', 'worse, getting worse, about the same, same, stable, few days'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -2088,7 +2074,6 @@ function generatePrescriptionShortcutIntro(baseUrl: string, lang: Lang = 'en'): 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
-  <Pause length="1"/>
   <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${q}</Say>
   </Gather>
@@ -2119,10 +2104,8 @@ function generatePrescriptionCallbackQuestion(callerPhone: string, baseUrl: stri
     : [`Can I reach you at ${escapeXml(digitByDigit)}?`, 'Press 1 for yes, or say or enter a different number.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
@@ -2135,7 +2118,6 @@ function generatePrescriptionMedicationQuestion(baseUrl: string, lang: Lang = 'e
   const msg = lang === 'es' ? '¿Qué medicamento necesita que le resurtan?' : 'What medication do you need refilled?';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${msg}</Say>
   </Gather>
@@ -2152,10 +2134,8 @@ function generatePrescriptionSafetyCheck(baseUrl: string, lang: Lang = 'en'): st
     : ['Just to confirm—are you having sudden vision loss, severe eye pain, or an eye injury right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
     <Say voice="${v}">${q}</Say>
-    <Pause length="1"/>
     <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
