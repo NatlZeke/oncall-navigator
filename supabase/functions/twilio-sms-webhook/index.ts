@@ -99,22 +99,27 @@ async function validateTwilioSignature(
 }
 
 // Provider reply keywords and their actions
-type ProviderReplyAction = 'ACK' | 'CALL' | 'ER' | 'RESOLVED' | null;
+// 4D: Extended to support CALL [number] override
+type ProviderReplyAction = { action: 'ACK' | 'CALL' | 'ER' | 'RESOLVED'; overrideNumber?: string } | null;
 
 function parseProviderReply(body: string): ProviderReplyAction {
   const normalizedBody = body.trim().toUpperCase();
   
-  // Check for exact matches first
-  if (normalizedBody === 'ACK' || normalizedBody === 'ACKNOWLEDGE') return 'ACK';
-  if (normalizedBody === 'CALL' || normalizedBody === 'CALLBACK') return 'CALL';
-  if (normalizedBody === 'ER') return 'ER';
-  if (normalizedBody === 'RESOLVED' || normalizedBody === 'RESOLVE') return 'RESOLVED';
+  // Check for CALL with override number first (4D)
+  const callWithNumber = body.trim().match(/^CALL\s+([\d+\-() ]{7,})/i);
+  if (callWithNumber) {
+    return { action: 'CALL', overrideNumber: callWithNumber[1].replace(/\D/g, '') };
+  }
   
-  // Check for keywords at the start of the message
-  if (/^ACK\b/i.test(normalizedBody)) return 'ACK';
-  if (/^CALL\b/i.test(normalizedBody)) return 'CALL';
-  if (/^ER\b/i.test(normalizedBody)) return 'ER';
-  if (/^RESOLVED?\b/i.test(normalizedBody)) return 'RESOLVED';
+  if (normalizedBody === 'ACK' || normalizedBody === 'ACKNOWLEDGE') return { action: 'ACK' };
+  if (normalizedBody === 'CALL' || normalizedBody === 'CALLBACK') return { action: 'CALL' };
+  if (normalizedBody === 'ER') return { action: 'ER' };
+  if (normalizedBody === 'RESOLVED' || normalizedBody === 'RESOLVE') return { action: 'RESOLVED' };
+  
+  if (/^ACK\b/i.test(normalizedBody)) return { action: 'ACK' };
+  if (/^CALL\b/i.test(normalizedBody)) return { action: 'CALL' };
+  if (/^ER\b/i.test(normalizedBody)) return { action: 'ER' };
+  if (/^RESOLVED?\b/i.test(normalizedBody)) return { action: 'RESOLVED' };
   
   return null;
 }

@@ -62,20 +62,28 @@ async function validateTwilioSignature(
 }
 
 // ============================================================================
-// OFFICE CONFIGURATION — Fix 4: Dynamic office lookup
+// OFFICE CONFIGURATION — 5A: Dynamic office lookup from DB
 // ============================================================================
 async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string }> {
-  // Try database lookup first (future-proof for multi-tenant)
-  // For now, fall back to a simple map since offices table may not exist yet
-  const officePhoneMap: Record<string, { officeId: string; officeName: string }> = {
-    '+15125281144': { officeId: 'office-1', officeName: 'Hill Country Eye Center - Cedar Park' },
-    '+15125281155': { officeId: 'office-2', officeName: 'Hill Country Eye Center - Georgetown' },
-  };
+  // Query the offices table for a matching phone number
+  try {
+    const { data: office, error } = await supabase
+      .from('offices')
+      .select('id, name')
+      .contains('phone_numbers', [calledPhone])
+      .eq('is_active', true)
+      .limit(1)
+      .single();
 
-  const match = officePhoneMap[calledPhone];
-  if (match) return match;
+    if (!error && office) {
+      return { officeId: office.id, officeName: office.name };
+    }
+  } catch (err) {
+    console.warn('Office lookup failed, using fallback:', err);
+  }
 
   // Default fallback
+  console.warn(`No office found for phone ${calledPhone}, using default`);
   return { officeId: 'office-1', officeName: 'Hill Country Eye Center' };
 }
 
@@ -94,7 +102,7 @@ interface OnCallInfo {
 // DATABASE HELPERS
 // ============================================================================
 
-// Fix 3: Fully dynamic provider matching from DB
+// Fix 3 tweak: Cap hints to first 2 keywords per provider
 async function getProviderRoutingConfig(supabase: any, officeId: string): Promise<{
   routingType: string;
   providerDirectory: Record<string, { name: string; phone: string }>;
@@ -221,13 +229,14 @@ interface IntakeData {
   hasRecentSurgery?: boolean;
   
   // Simplified 4-question red flag screen
-  hasVisionLoss?: boolean;           // Q1: Sudden vision loss or major change?
-  hasFlashesWithCurtain?: boolean;   // Q2: NEW flashes/floaters WITH curtain/shadow?
-  hasSeverePain?: boolean;           // Q3: Severe eye pain right now?
-  hasTraumaChemical?: boolean;       // Q4: Trauma or chemical exposure?
+  hasVisionLoss?: boolean;
+  hasFlashesWithCurtain?: boolean;
+  hasSeverePain?: boolean;
+  hasTraumaChemical?: boolean;
   
-  // Fix 1: Stability check
+  // Stability check
   isWorsening?: boolean;
+  stabilityResponse?: string; // 4A: Raw stability response for SMS
   
   // Prescription shortcut
   isPrescriptionRequest?: boolean;
@@ -258,6 +267,7 @@ interface PreCallSummary {
   triageLevel: string;
   officeName: string;
   serviceLine: string;
+  stabilityAssessment?: string; // 4A: Stability info for SMS
 }
 
 const PRESCRIPTION_KEYWORDS = [
@@ -276,14 +286,14 @@ function isAffirmative(text: string): boolean {
   return /\b(yes|yeah|yep|yup|correct|right|affirmative|uh-huh|mm-hmm|true)\b/i.test(cleaned);
 }
 
-// More permissive version for detecting affirmative intent in longer responses
+// 6C: containsAffirmative used in prescription_safety
 function containsAffirmative(text: string): boolean {
   const cleaned = text.toLowerCase().trim();
   if (/\b(no|not|don't|didn't|haven't|never)\b/i.test(cleaned)) return false;
   return /\b(yes|yeah|yep|yup|correct|right|i do|i am|i have|i had|uh-huh|mm-hmm)\b/i.test(cleaned);
 }
 
-// Fix 1: Worsening language detection
+// Worsening language detection
 function isWorseningLanguage(text: string): boolean {
   const cleaned = text.toLowerCase().trim();
   return /\b(worse|worsening|getting bad|getting worse|just started|new today|suddenly|just happened|just now|escalating|increasing|more severe|rapidly|acute)\b/i.test(cleaned);
@@ -295,14 +305,14 @@ function isPrescriptionRequest(text: string): boolean {
 }
 
 // ============================================================================
-// Fix 5: Retry counter helpers
+// Retry counter helpers
 // ============================================================================
 function getRetryCount(metadata: any, stage: string): number {
   return metadata?.retry_counts?.[stage] || 0;
 }
 
 function incrementRetry(metadata: any, stage: string): any {
-  const counts = metadata?.retry_counts || {};
+  const counts = { ...(metadata?.retry_counts || {}) };
   counts[stage] = (counts[stage] || 0) + 1;
   return { ...metadata, retry_counts: counts };
 }
@@ -363,7 +373,6 @@ serve(async (req) => {
       .single();
 
     if (!conversation) {
-      // Fix 4: Use resolved officeId instead of hardcoded string
       const { data: newConversation, error } = await supabase
         .from('twilio_conversations')
         .insert({
@@ -401,9 +410,30 @@ serve(async (req) => {
     let twimlResponse: string;
 
     // ============================================================================
-    // SIMPLIFIED INTAKE FLOW
-    // Flow: welcome → established_gate → (block or continue) → name → dob → callback → confirm_callback
-    //       → post_op → red_flag_screen (4 questions) → brief_complaint → ask_stability → disposition
+    // 3C: Check for DTMF 0 escape hatch at ANY stage (voicemail)
+    // ============================================================================
+    if (digits === '0' && stage !== 'welcome' && stage !== 'voicemail' && stage !== 'complete') {
+      transcript.push({ role: 'system', content: 'Caller pressed 0 — voicemail escape', timestamp: new Date().toISOString() });
+      
+      await supabase.from('notification_logs').insert({
+        notification_type: 'voicemail_escape',
+        recipient_phone: callerPhone,
+        office_id: resolvedOfficeId,
+        content: { call_sid: callSid, stage_at_escape: stage, intake_data: intakeData },
+        status: 'logged',
+        metadata: { workflow: 'voicemail_escape', escalated: false }
+      });
+      
+      twimlResponse = generateVoicemailPrompt(supabaseUrl);
+      await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+      
+      return new Response(twimlResponse, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
+      });
+    }
+
+    // ============================================================================
+    // INTAKE FLOW
     // ============================================================================
     switch (stage) {
       // ============================================================================
@@ -423,7 +453,6 @@ serve(async (req) => {
           transcript.push({ role: 'caller', content: speechResult || `pressed ${digits}`, timestamp: new Date().toISOString() });
           
           if (!isEstablished) {
-            // NON-PATIENT BLOCKED - Hard stop
             intakeData.establishedPatientGateLogged = true;
             console.log('Established patient gate: Non-patient blocked', { callSid, callerPhone });
             
@@ -437,25 +466,22 @@ serve(async (req) => {
               gate_result: 'non_patient_blocked'
             });
           } else {
-            // ESTABLISHED PATIENT - Continue intake
             intakeData.establishedPatientGateLogged = true;
             console.log('Established patient gate: Confirmed', { callSid, callerPhone });
             
-            // Check for prescription request in initial speech
             if (speechResult && isPrescriptionRequest(speechResult)) {
               intakeData.isPrescriptionRequest = true;
               twimlResponse = generatePrescriptionShortcutIntro(supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_name', intake_data: intakeData });
             } else {
+              // 3B: Conversational transition
               twimlResponse = generateCollectNameResponse(supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name', intake_data: intakeData });
             }
           }
         } else {
-          // Fix 5: Retry with fallback
           const retries = getRetryCount(metadata, 'established_gate');
           if (retries >= MAX_RETRIES) {
-            // Fail-safe: treat as non-patient
             await logNonPatientBlocked(supabase, callSid, callerPhone, onCallInfo.officeName, resolvedOfficeId);
             twimlResponse = generateRetryExhausted(supabaseUrl, 'non_patient');
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
@@ -495,7 +521,6 @@ serve(async (req) => {
           const response = speechResult || digits;
           intakeData.dateOfBirth = response;
           transcript.push({ role: 'caller', content: response, timestamp: new Date().toISOString() });
-          // Fix 8: Offer caller phone as default callback
           twimlResponse = generateCallbackWithDefault(callerPhone || metadata?.caller_phone, supabaseUrl);
           await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_callback', intake_data: intakeData, callback_default_offered: true });
         } else {
@@ -515,18 +540,17 @@ serve(async (req) => {
       case 'ask_callback':
         if (speechResult || digits) {
           const callbackInput = digits || speechResult;
-          // Fix 8: Check if patient confirmed the default (pressed 1 or said yes)
           if (metadata?.callback_default_offered && (digits === '1' || isAffirmative(speechResult || ''))) {
             intakeData.callbackNumber = callerPhone || metadata?.caller_phone;
             intakeData.callbackConfirmed = true;
             transcript.push({ role: 'caller', content: 'confirmed default callback', timestamp: new Date().toISOString() });
             
-            // Provider routing if needed
             if (onCallInfo.requiresPatientDoctorConfirmation) {
               twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
             } else {
-              twimlResponse = generatePostOpQuestion(supabaseUrl);
+              // 3B: Transition phrase before clinical questions
+              twimlResponse = generatePostOpQuestionWithTransition(intakeData.patientName, supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_postop', intake_data: intakeData });
             }
           } else {
@@ -549,6 +573,7 @@ serve(async (req) => {
         }
         break;
 
+      // 6B: confirm_callback with retry logic
       case 'confirm_callback':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -558,13 +583,12 @@ serve(async (req) => {
             intakeData.callbackConfirmed = true;
             transcript.push({ role: 'caller', content: 'confirmed', timestamp: new Date().toISOString() });
             
-            // Provider routing if needed
             if (onCallInfo.requiresPatientDoctorConfirmation) {
               twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
             } else {
-              // STEP 3: Post-op question
-              twimlResponse = generatePostOpQuestion(supabaseUrl);
+              // 3B: Transition before clinical questions
+              twimlResponse = generatePostOpQuestionWithTransition(intakeData.patientName, supabaseUrl);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_postop', intake_data: intakeData });
             }
           } else {
@@ -572,18 +596,34 @@ serve(async (req) => {
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_callback', intake_data: intakeData, callback_default_offered: false });
           }
         } else {
-          twimlResponse = generateCallbackConfirmation(intakeData.callbackNumber || callerPhone, supabaseUrl);
+          const retries = getRetryCount(metadata, 'confirm_callback');
+          if (retries >= MAX_RETRIES) {
+            // Accept current callback number and move on
+            intakeData.callbackConfirmed = true;
+            transcript.push({ role: 'system', content: 'Callback confirmation retry exhausted — accepted current number', timestamp: new Date().toISOString() });
+            if (onCallInfo.requiresPatientDoctorConfirmation) {
+              twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
+            } else {
+              twimlResponse = generatePostOpQuestionWithTransition(intakeData.patientName, supabaseUrl);
+              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_postop', intake_data: intakeData });
+            }
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'confirm_callback');
+            twimlResponse = generateCallbackConfirmation(intakeData.callbackNumber || callerPhone, supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
         }
         break;
 
-      // Fix 3: Dynamic provider matching
+      // Dynamic provider matching
       case 'ask_patient_doctor':
         if (speechResult) {
           const doctorResponse = speechResult.toLowerCase();
           intakeData.patientDoctor = speechResult;
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
-          let routeToProvider = onCallInfo.onCallProvider; // default fallback
+          let routeToProvider = onCallInfo.onCallProvider;
           for (const [keyword, provider] of Object.entries(onCallInfo.providerDirectory)) {
             if (doctorResponse.includes(keyword)) {
               routeToProvider = provider;
@@ -597,7 +637,6 @@ serve(async (req) => {
         } else {
           const retries = getRetryCount(metadata, 'ask_patient_doctor');
           if (retries >= MAX_RETRIES) {
-            // Default to on-call provider
             intakeData.routedToProvider = onCallInfo.onCallProvider;
             twimlResponse = generatePostOpQuestion(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_postop', intake_data: intakeData });
@@ -610,7 +649,7 @@ serve(async (req) => {
         break;
 
       // ============================================================================
-      // STEP 3: POST-OP SHORTCUT
+      // STEP 3: POST-OP CHECK — 3A: Capture complaint before routing
       // ============================================================================
       case 'ask_postop':
         if (speechResult || digits) {
@@ -619,23 +658,18 @@ serve(async (req) => {
           transcript.push({ role: 'caller', content: speechResult || `pressed ${digits}`, timestamp: new Date().toISOString() });
           
           if (intakeData.hasRecentSurgery) {
-            // POST-OP SHORTCUT: Route to URGENT_CALLBACK even without red flags
-            intakeData.disposition = 'URGENT_CALLBACK';
-            intakeData.dispositionReason = 'Post-operative patient concern';
+            // 3A: Post-op YES → ask brief complaint BEFORE routing
             intakeData.symptoms.push('post-operative concern');
-            intakeData.primaryComplaint = 'Post-op concern';
-            
-            twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+            // 3B: Transition
+            twimlResponse = generatePostOpComplaintQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'postop_complaint', intake_data: intakeData });
           } else {
-            // Not post-op: proceed to simplified 4-question red flag screen
             twimlResponse = generateRedFlag1_VisionLoss(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'redflag_1', intake_data: intakeData });
           }
         } else {
           const retries = getRetryCount(metadata, 'ask_postop');
           if (retries >= MAX_RETRIES) {
-            // Default: no surgery, proceed
             intakeData.hasRecentSurgery = false;
             twimlResponse = generateRedFlag1_VisionLoss(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'redflag_1', intake_data: intakeData });
@@ -647,11 +681,47 @@ serve(async (req) => {
         }
         break;
 
+      // 3A: New stage — capture post-op patient's actual complaint
+      case 'postop_complaint':
+        if (speechResult) {
+          intakeData.primaryComplaint = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          // Check if complaint matches ER-level red flag keywords
+          const complaintLower = speechResult.toLowerCase();
+          const hasRedFlagKeywords = /\b(vision loss|can't see|blind|curtain|shadow|chemical|splash|trauma|hit|punch)\b/i.test(complaintLower);
+          
+          if (hasRedFlagKeywords) {
+            intakeData.disposition = 'ER_NOW';
+            intakeData.dispositionReason = 'Post-operative patient with red flag symptoms';
+          } else {
+            intakeData.disposition = 'URGENT_CALLBACK';
+            intakeData.dispositionReason = 'Post-operative patient concern';
+          }
+          
+          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+        } else {
+          const retries = getRetryCount(metadata, 'postop_complaint');
+          if (retries >= MAX_RETRIES) {
+            // Fail-safe: route to URGENT_CALLBACK with generic complaint
+            intakeData.primaryComplaint = 'Post-op concern (unable to capture details)';
+            intakeData.disposition = 'URGENT_CALLBACK';
+            intakeData.dispositionReason = 'Post-operative patient concern';
+            twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'postop_complaint');
+            twimlResponse = generatePostOpComplaintQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
+        }
+        break;
+
       // ============================================================================
       // STEP 4: SIMPLIFIED 4-QUESTION RED FLAG SCREEN
       // ============================================================================
       
-      // Q1: Sudden vision loss or major sudden change?
       case 'redflag_1':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -684,7 +754,6 @@ serve(async (req) => {
         }
         break;
 
-      // Q2: New flashes/floaters WITH curtain/shadow?
       case 'redflag_2':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -717,7 +786,6 @@ serve(async (req) => {
         }
         break;
 
-      // Q3: Severe eye pain right now?
       case 'redflag_3':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -750,7 +818,6 @@ serve(async (req) => {
         }
         break;
 
-      // Q4: Trauma or chemical exposure?
       case 'redflag_4':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -766,7 +833,7 @@ serve(async (req) => {
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
-            // NO RED FLAGS - Ask what's going on briefly
+            // NO RED FLAGS — 3B: Soften transition to complaint question
             twimlResponse = generateBriefComplaintQuestion(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'brief_complaint', intake_data: intakeData });
           }
@@ -790,13 +857,11 @@ serve(async (req) => {
           intakeData.primaryComplaint = speechResult;
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
-          // Check for prescription request
           if (isPrescriptionRequest(speechResult)) {
             intakeData.isPrescriptionRequest = true;
             twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_safety', intake_data: intakeData });
           } else {
-            // Fix 1: Instead of defaulting to URGENT_CALLBACK, ask stability question
             intakeData.symptoms.push(speechResult.substring(0, 50));
             twimlResponse = generateStabilityQuestion(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_stability', intake_data: intakeData });
@@ -804,7 +869,6 @@ serve(async (req) => {
         } else {
           const retries = getRetryCount(metadata, 'brief_complaint');
           if (retries >= MAX_RETRIES) {
-            // Fail-safe: route to URGENT_CALLBACK when we can't capture complaint
             intakeData.primaryComplaint = 'Unable to capture — patient on line';
             intakeData.disposition = 'URGENT_CALLBACK';
             intakeData.dispositionReason = 'Unable to capture complaint — fail-safe escalation';
@@ -819,7 +883,7 @@ serve(async (req) => {
         break;
 
       // ============================================================================
-      // Fix 1: STABILITY CHECK — new stage between brief_complaint and disposition
+      // STABILITY CHECK
       // ============================================================================
       case 'ask_stability':
         if (speechResult || digits) {
@@ -828,16 +892,16 @@ serve(async (req) => {
           
           const worsening = isWorseningLanguage(response) || digits === '1';
           intakeData.isWorsening = worsening;
+          intakeData.stabilityResponse = speechResult || (digits === '1' ? 'worsening' : 'stable'); // 4A: capture raw
           
           if (worsening) {
-            // Getting worse → URGENT_CALLBACK
             intakeData.disposition = 'URGENT_CALLBACK';
             intakeData.dispositionReason = 'Established patient concern — worsening symptoms';
             
+            // 3B: Acknowledgment before disposition
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
-            // Stable → NEXT_BUSINESS_DAY
             intakeData.disposition = 'NEXT_BUSINESS_DAY';
             intakeData.dispositionReason = 'Stable non-urgent concern — deferred to next business day';
             intakeData.triageLevel = 'nonUrgent';
@@ -850,7 +914,6 @@ serve(async (req) => {
         } else {
           const retries = getRetryCount(metadata, 'ask_stability');
           if (retries >= MAX_RETRIES) {
-            // Fail-safe: route to URGENT_CALLBACK when in doubt
             intakeData.disposition = 'URGENT_CALLBACK';
             intakeData.dispositionReason = 'Unable to determine stability — fail-safe escalation';
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId);
@@ -864,28 +927,53 @@ serve(async (req) => {
         break;
 
       // ============================================================================
-      // PRESCRIPTION SHORTCUT FLOW
+      // PRESCRIPTION SHORTCUT FLOW — 6A: With retry logic
       // ============================================================================
       case 'prescription_name':
         if (speechResult) {
           intakeData.patientName = speechResult;
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
-          twimlResponse = generatePrescriptionCallbackQuestion(supabaseUrl);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_callback', intake_data: intakeData });
+          twimlResponse = generatePrescriptionCallbackQuestion(callerPhone || metadata?.caller_phone, supabaseUrl);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_callback', intake_data: intakeData, callback_default_offered: true });
         } else {
-          twimlResponse = generatePrescriptionNameQuestion(supabaseUrl);
+          const retries = getRetryCount(metadata, 'prescription_name');
+          if (retries >= MAX_RETRIES) {
+            // Route to voicemail
+            transcript.push({ role: 'system', content: 'Prescription name retry exhausted — routing to voicemail', timestamp: new Date().toISOString() });
+            twimlResponse = generateVoicemailPrompt(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'prescription_name');
+            twimlResponse = generatePrescriptionNameQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
         }
         break;
 
       case 'prescription_callback':
         if (speechResult || digits) {
           const callbackInput = digits || speechResult;
-          intakeData.callbackNumber = callbackInput;
+          // Check if confirmed default (press 1 or yes)
+          if (metadata?.callback_default_offered && (digits === '1' || isAffirmative(speechResult || ''))) {
+            intakeData.callbackNumber = callerPhone || metadata?.caller_phone;
+          } else {
+            intakeData.callbackNumber = callbackInput;
+          }
           transcript.push({ role: 'caller', content: callbackInput, timestamp: new Date().toISOString() });
           twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
           await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_medication', intake_data: intakeData });
         } else {
-          twimlResponse = generatePrescriptionCallbackQuestion(supabaseUrl);
+          const retries = getRetryCount(metadata, 'prescription_callback');
+          if (retries >= MAX_RETRIES) {
+            // Default to caller phone
+            intakeData.callbackNumber = callerPhone || metadata?.caller_phone || 'Not provided';
+            twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_medication', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'prescription_callback');
+            twimlResponse = generatePrescriptionCallbackQuestion(callerPhone || metadata?.caller_phone, supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
         }
         break;
 
@@ -896,7 +984,17 @@ serve(async (req) => {
           twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
           await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_safety', intake_data: intakeData });
         } else {
-          twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+          const retries = getRetryCount(metadata, 'prescription_medication');
+          if (retries >= MAX_RETRIES) {
+            // Route to voicemail
+            transcript.push({ role: 'system', content: 'Medication name retry exhausted — routing to voicemail', timestamp: new Date().toISOString() });
+            twimlResponse = generateVoicemailPrompt(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'voicemail', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'prescription_medication');
+            twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
         }
         break;
 
@@ -905,16 +1003,14 @@ serve(async (req) => {
           const response = (speechResult || '').toLowerCase();
           transcript.push({ role: 'caller', content: speechResult || `pressed ${digits}`, timestamp: new Date().toISOString() });
           
-          // Check for emergent symptoms
-          const hasEmergentSymptoms = (isAffirmative(response) && !response.includes('no')) || digits === '1';
+          // 6C/6E: Use containsAffirmative, remove redundant negation check
+          const hasEmergentSymptoms = containsAffirmative(response) || digits === '1';
           
           if (hasEmergentSymptoms) {
-            // Fix 7: Collect DOB before returning to red flag screen
             console.log('Prescription safety check: Emergent symptoms detected, collecting DOB first');
             twimlResponse = generateDOBQuestion(supabaseUrl);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_emergency_dob', intake_data: intakeData });
           } else {
-            // NEXT_BUSINESS_DAY for prescription request
             intakeData.disposition = 'NEXT_BUSINESS_DAY';
             intakeData.dispositionReason = 'Prescription request - safety check passed';
             intakeData.safetyCheckCompleted = true;
@@ -926,17 +1022,29 @@ serve(async (req) => {
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           }
         } else {
-          twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
+          const retries = getRetryCount(metadata, 'prescription_safety');
+          if (retries >= MAX_RETRIES) {
+            // Fail-safe: assume no emergent symptoms, defer to next business day
+            intakeData.disposition = 'NEXT_BUSINESS_DAY';
+            intakeData.dispositionReason = 'Prescription request - safety check not completed (retry exhausted)';
+            intakeData.primaryComplaint = `Prescription refill: ${intakeData.medicationRequested || 'unspecified'}`;
+            await logNonEscalation(supabase, callSid, callerPhone, intakeData, 'Prescription request deferred — safety check retry exhausted', resolvedOfficeId);
+            twimlResponse = generateNextBusinessDayScript(onCallInfo.officeName);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'prescription_safety');
+            twimlResponse = generatePrescriptionSafetyCheck(supabaseUrl);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
         }
         break;
 
-      // Fix 7: New stage — collect DOB for prescription patients redirected to red flags
+      // Collect DOB for prescription patients redirected to red flags
       case 'prescription_emergency_dob':
         if (speechResult || digits) {
           const response = speechResult || digits;
           intakeData.dateOfBirth = response;
           transcript.push({ role: 'caller', content: response, timestamp: new Date().toISOString() });
-          // Now proceed to red flag screen
           twimlResponse = generateRedFlag1_VisionLoss(supabaseUrl);
           await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'redflag_1', intake_data: intakeData });
         } else {
@@ -1012,6 +1120,14 @@ async function handleDisposition(
 
   const targetProvider = intakeData.routedToProvider || onCallInfo.onCallProvider;
   
+  // 4A: Build stability assessment string
+  let stabilityAssessment: string | undefined;
+  if (intakeData.isWorsening !== undefined) {
+    stabilityAssessment = intakeData.isWorsening
+      ? `Worsening${intakeData.stabilityResponse ? ` ("${intakeData.stabilityResponse}")` : ''}`
+      : `Stable${intakeData.stabilityResponse ? ` ("${intakeData.stabilityResponse}")` : ''}`;
+  }
+  
   const summary: PreCallSummary = {
     patientName: intakeData.patientName || 'Unknown',
     callbackNumber: intakeData.callbackNumber || callerPhone,
@@ -1023,7 +1139,8 @@ async function handleDisposition(
     dispositionReason: intakeData.dispositionReason || 'Established patient concern',
     triageLevel: intakeData.triageLevel || 'unknown',
     officeName: onCallInfo.officeName,
-    serviceLine: onCallInfo.serviceLine
+    serviceLine: onCallInfo.serviceLine,
+    stabilityAssessment,
   };
 
   switch (disposition) {
@@ -1054,7 +1171,6 @@ async function handleDisposition(
   }
 }
 
-// Fix 4: Use dynamic officeId parameter
 async function createEscalationRecord(
   supabase: any,
   callSid: string,
@@ -1139,7 +1255,6 @@ async function updateEscalationWithSMS(
   });
 }
 
-// Fix 4: Dynamic officeId parameter
 async function logNonEscalation(
   supabase: any,
   callSid: string,
@@ -1154,12 +1269,14 @@ async function logNonEscalation(
     office_id: officeId,
     content: {
       patient_name: intakeData.patientName,
+      callback_number: intakeData.callbackNumber,
       disposition: intakeData.disposition || 'NEXT_BUSINESS_DAY',
       reason: reason,
       symptoms: intakeData.symptoms,
       call_sid: callSid,
       is_prescription: intakeData.isPrescriptionRequest,
-      medication: intakeData.medicationRequested
+      medication: intakeData.medicationRequested,
+      stability_response: intakeData.stabilityResponse
     },
     status: 'logged',
     metadata: {
@@ -1171,7 +1288,6 @@ async function logNonEscalation(
   });
 }
 
-// Fix 4: Dynamic officeId parameter
 async function logNonPatientBlocked(
   supabase: any,
   callSid: string,
@@ -1198,7 +1314,7 @@ async function logNonPatientBlocked(
 }
 
 // ============================================================================
-// SMS FORMATTER
+// SMS FORMATTER — 4A: Include stability assessment
 // ============================================================================
 type SMSTemplate = 'long' | 'short';
 
@@ -1214,6 +1330,7 @@ interface SMSFormatterInput {
   callbackNumber: string;
   chiefComplaint: string;
   symptoms: string[];
+  stabilityAssessment?: string;
 }
 
 const MAX_SMS_CHARS = 600;
@@ -1248,6 +1365,7 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
     callbackNumber,
     chiefComplaint,
     symptoms,
+    stabilityAssessment,
   } = input;
 
   const safeName = callerName || 'Unknown';
@@ -1257,13 +1375,15 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
   const estPatient = isEstablishedPatient ? 'Yes' : 'No';
   const postOp = hasRecentSurgery ? 'Yes' : 'No';
   const symptomList = symptoms.length > 0 ? symptoms.slice(0, 3).join(', ') : 'None specified';
+  // 4A: Onset/stability line
+  const onsetLine = stabilityAssessment ? `\nOnset: ${stabilityAssessment}` : '';
 
   const longBody = `ONCALL NAVIGATOR — ${officeName}
 DISPOSITION: ${disposition} | ${serviceLine}
 Patient: ${safeName} (DOB: ${safeDOB})
 Established: ${estPatient} | PostOp: ${postOp}
 Callback: ${safeCallback}
-Concern: ${safeCC}
+Concern: ${safeCC}${onsetLine}
 Symptoms: ${symptomList}
 ID: ${escalationId}
 Reply: ACK | CALL | ER | RESOLVED`;
@@ -1275,7 +1395,7 @@ Reply: ACK | CALL | ER | RESOLVED`;
   const shortBody = `${officeName} | ${disposition}
 ${safeName} DOB:${safeDOB} Est:${estPatient} PostOp:${postOp}
 CB:${safeCallback}
-CC:${safeCC}
+CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}
 ID:${escalationId} Reply:ACK/CALL/ER/RESOLVED`;
 
   return { body: shortBody, templateUsed: 'short', charCount: shortBody.length };
@@ -1310,6 +1430,7 @@ async function sendPreCallSMS(
     callbackNumber: summary.callbackNumber,
     chiefComplaint: summary.primaryComplaint,
     symptoms: summary.symptoms,
+    stabilityAssessment: summary.stabilityAssessment,
   });
 
   console.log(`SMS formatted using ${smsResult.templateUsed} template (${smsResult.charCount} chars)`);
@@ -1388,7 +1509,6 @@ function escapeXml(text: string): string {
 // TWIML GENERATORS - DISPOSITION SCRIPTS
 // ============================================================================
 
-// Fix 2: Non-diagnostic ER NOW script
 function generateERNowScript(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -1404,11 +1524,11 @@ function generateERNowScript(): string {
 function generateUrgentCallbackScript(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna-Neural">Thank you. I'm sending your information to the on-call clinician now.</Say>
+  <Say voice="Polly.Joanna-Neural">Thank you for that information. Let me get this to the right place.</Say>
   <Pause length="1"/>
-  <Say voice="Polly.Joanna-Neural">They will call you back shortly. Please keep your phone nearby.</Say>
+  <Say voice="Polly.Joanna-Neural">I'm sending your information to the on-call clinician now. They will call you back shortly.</Say>
   <Pause length="1"/>
-  <Say voice="Polly.Joanna-Neural">If your symptoms worsen—especially sudden vision loss, severe pain, or a curtain in your vision—go to the nearest emergency room.</Say>
+  <Say voice="Polly.Joanna-Neural">Please keep your phone nearby. If your symptoms worsen—especially sudden vision loss, severe pain, or a curtain in your vision—go to the nearest emergency room.</Say>
   <Pause length="1"/>
   <Say voice="Polly.Joanna-Neural">Goodbye.</Say>
   <Hangup/>
@@ -1418,7 +1538,7 @@ function generateUrgentCallbackScript(): string {
 function generateNextBusinessDayScript(officeName: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna-Neural">Thank you. Your message has been recorded and will be reviewed on the next business day.</Say>
+  <Say voice="Polly.Joanna-Neural">Thank you for that information. Your message has been recorded and will be reviewed on the next business day.</Say>
   <Pause length="1"/>
   <Say voice="Polly.Joanna-Neural">If your symptoms worsen—especially sudden vision loss, severe pain, or a curtain in your vision—go to the nearest emergency room.</Say>
   <Pause length="1"/>
@@ -1441,7 +1561,6 @@ function generateNonPatientDeflection(officeName: string): string {
 </Response>`;
 }
 
-// Fix 5: Retry exhausted fallback
 function generateRetryExhausted(baseUrl: string, fallbackType: 'non_patient' | 'skip' | 'urgent'): string {
   if (fallbackType === 'non_patient') {
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -1456,7 +1575,6 @@ function generateRetryExhausted(baseUrl: string, fallbackType: 'non_patient' | '
   <Hangup/>
 </Response>`;
   }
-  // Generic fallback
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna-Neural">I'm having trouble hearing you. Let me make sure your concern is addressed.</Say>
@@ -1467,12 +1585,16 @@ function generateRetryExhausted(baseUrl: string, fallbackType: 'non_patient' | '
 // ============================================================================
 // TWIML GENERATORS - INTAKE QUESTIONS
 // ============================================================================
+
+// 3C: Welcome now includes "Press 0 for voicemail" escape hatch
 function generateWelcomeWithEstablishedGate(officeName: string, baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna-Neural">Thank you for calling ${escapeXml(officeName)} after hours service.</Say>
   <Pause length="1"/>
   <Say voice="Polly.Joanna-Neural">If this is an emergency, please hang up and dial 911.</Say>
+  <Pause length="1"/>
+  <Say voice="Polly.Joanna-Neural">Press 0 at any time to leave a voicemail for the on-call team.</Say>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
     <Say voice="Polly.Joanna-Neural">Are you an established patient with ${escapeXml(officeName)}?</Say>
@@ -1483,6 +1605,7 @@ function generateWelcomeWithEstablishedGate(officeName: string, baseUrl: string)
 </Response>`;
 }
 
+// 3B: Conversational transition after collecting name/DOB/callback
 function generateCollectNameResponse(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -1527,7 +1650,6 @@ function generateCallbackNumberQuestion(baseUrl: string): string {
 </Response>`;
 }
 
-// Fix 8: Offer caller phone as default callback
 function generateCallbackWithDefault(callerPhone: string, baseUrl: string): string {
   const digitByDigit = formatPhoneDigitByDigit(callerPhone || '');
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -1561,14 +1683,45 @@ function generateCallbackConfirmation(callback: string, baseUrl: string): string
 </Response>`;
 }
 
-// Fix 3: Dynamic hints from provider directory
+// Fix 3 tweak: Cap hints to first 2 keywords per provider
 function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { name: string; phone: string }>, baseUrl: string): string {
-  const hints = Object.keys(providerDirectory).concat(["don't know"]).join(', ');
+  // Group keywords by provider to cap at 2 per provider
+  const providerKeywords = new Map<string, string[]>();
+  for (const [keyword, provider] of Object.entries(providerDirectory)) {
+    const existing = providerKeywords.get(provider.name) || [];
+    existing.push(keyword);
+    providerKeywords.set(provider.name, existing);
+  }
+  const hintsList: string[] = [];
+  for (const keywords of providerKeywords.values()) {
+    hintsList.push(...keywords.slice(0, 2));
+  }
+  hintsList.push("don't know");
+  const hints = hintsList.join(', ');
+  
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
   <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${escapeXml(hints)}">
     <Say voice="Polly.Joanna-Neural">Who is your doctor at our office?</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+// 3B: Post-op question with transition phrase after data collection
+function generatePostOpQuestionWithTransition(patientName: string | undefined, baseUrl: string): string {
+  const nameGreeting = patientName && patientName !== 'Not provided' 
+    ? `Thank you, ${escapeXml(patientName)}.` 
+    : 'Thank you.';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna-Neural">${nameGreeting} Now I need to ask a few quick safety questions.</Say>
+  <Pause length="1"/>
+  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
+    <Say voice="Polly.Joanna-Neural">Have you had eye surgery in the last 14 days?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">Press 1 for yes, 2 for no.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1582,6 +1735,19 @@ function generatePostOpQuestion(baseUrl: string): string {
     <Say voice="Polly.Joanna-Neural">Have you had eye surgery in the last 14 days?</Say>
     <Pause length="1"/>
     <Say voice="Polly.Joanna-Neural">Press 1 for yes, 2 for no.</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+// 3A: Ask post-op patient what's going on
+function generatePostOpComplaintQuestion(baseUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna-Neural">Got it. Can you briefly tell me what's going on?</Say>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
+    <Say voice="Polly.Joanna-Neural">Please describe what you're experiencing.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1642,18 +1808,19 @@ function generateRedFlag4_TraumaChemical(baseUrl: string): string {
 </Response>`;
 }
 
+// 3B: Softer transition to complaint question
 function generateBriefComplaintQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Say voice="Polly.Joanna-Neural">Good. Now, in your own words, what's going on with your eyes tonight?</Say>
   <Pause length="1"/>
   <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="Polly.Joanna-Neural">Briefly, what's going on with your eyes tonight?</Say>
+    <Say voice="Polly.Joanna-Neural">Please briefly describe your concern.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
 
-// Fix 1: Stability question TwiML generator
 function generateStabilityQuestion(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -1692,12 +1859,16 @@ function generatePrescriptionNameQuestion(baseUrl: string): string {
 </Response>`;
 }
 
-function generatePrescriptionCallbackQuestion(baseUrl: string): string {
+// 6A: Prescription callback now offers caller ID default
+function generatePrescriptionCallbackQuestion(callerPhone: string, baseUrl: string): string {
+  const digitByDigit = formatPhoneDigitByDigit(callerPhone || '');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="Polly.Joanna-Neural">What's your callback number?</Say>
+  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no">
+    <Say voice="Polly.Joanna-Neural">Can I reach you at ${escapeXml(digitByDigit)}?</Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna-Neural">Press 1 for yes, or say or enter a different number.</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;

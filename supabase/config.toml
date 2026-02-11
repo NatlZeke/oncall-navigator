@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.twilio-callback-bridge]
 verify_jwt = false
+
+[functions.sla-escalation-check]
+verify_jwt = true
