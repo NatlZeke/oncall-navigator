@@ -7,7 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-twilio-signature',
 };
 
-// Validate Twilio webhook signature
+// ============================================================================
+// SIGNATURE VALIDATION
+// ============================================================================
 async function validateTwilioSignature(
   req: Request,
   formData: FormData,
@@ -20,14 +22,15 @@ async function validateTwilioSignature(
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  let fullUrl = `${supabaseUrl}/functions/v1/twilio-voice-webhook`;
+  const functionName = 'twilio-voice-webhook';
+  let fullUrl = `${supabaseUrl}/functions/v1/${functionName}`;
   fullUrl = fullUrl.replace('http://', 'https://');
 
   const params: Record<string, string> = {};
   formData.forEach((value, key) => {
     params[key] = value.toString();
   });
-
+  
   const sortedKeys = Object.keys(params).sort();
   let data = fullUrl;
   for (const key of sortedKeys) {
@@ -42,110 +45,172 @@ async function validateTwilioSignature(
     false,
     ['sign']
   );
-
+  
   const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
   const calculatedSignature = base64Encode(signatureBytes);
 
-  return signature === calculatedSignature;
+  const isValid = signature === calculatedSignature;
+  if (!isValid) {
+    console.error('Invalid Twilio signature', { 
+      received: signature, 
+      calculated: calculatedSignature,
+      url: fullUrl,
+    });
+  }
+  
+  return isValid;
 }
 
-// Office configuration and routing
+// ============================================================================
+// OFFICE CONFIGURATION — 5A: Dynamic office lookup from DB
+// ============================================================================
+async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string }> {
+  try {
+    const { data: office, error } = await supabase
+      .from('offices')
+      .select('id, name')
+      .contains('phone_numbers', [calledPhone])
+      .eq('is_active', true)
+      .limit(1)
+      .single();
 
-interface OnCallProvider {
-  name: string;
-  phone: string;
+    if (!error && office) {
+      return { officeId: office.id, officeName: office.name };
+    }
+  } catch (err) {
+    console.warn('Office lookup failed, using fallback:', err);
+  }
+
+  console.warn(`No office found for phone ${calledPhone}, using default`);
+  return { officeId: 'office-1', officeName: 'Hill Country Eye Center' };
 }
 
 interface OnCallInfo {
-  officeId: string;
   officeName: string;
+  officeId: string;
   serviceLine: string;
-  onCallProvider: OnCallProvider;
-  providerDirectory: Record<string, OnCallProvider>;
+  onCallProvider: { name: string; phone: string };
+  afterHoursStart: string;
+  afterHoursEnd: string;
   requiresPatientDoctorConfirmation: boolean;
+  providerDirectory: Record<string, { name: string; phone: string }>;
 }
 
-function getOfficeByPhone(phone: string): string | null {
-  // Map phone numbers to office IDs
-  const phoneToOffice: Record<string, string> = {
-    '+15125281144': 'office-1',
-    '+15125281155': 'office-2',
-  };
-  return phoneToOffice[phone] || null;
-}
+// ============================================================================
+// DATABASE HELPERS
+// ============================================================================
 
-function getProviderRoutingConfig(officeId: string): OnCallInfo {
-  // Example static config, could be fetched from DB or env
-  if (officeId === 'office-1') {
-    return {
-      officeId,
-      officeName: 'Office One',
-      serviceLine: 'General',
-      onCallProvider: { name: 'Dr. Smith', phone: '+15551234567' },
-      providerDirectory: {
-        'smith': { name: 'Dr. Smith', phone: '+15551234567' },
-        'johnson': { name: 'Dr. Johnson', phone: '+15557654321' },
-      },
-      requiresPatientDoctorConfirmation: true,
-    };
-  } else if (officeId === 'office-2') {
-    return {
-      officeId,
-      officeName: 'Office Two',
-      serviceLine: 'Ophthalmology',
-      onCallProvider: { name: 'Dr. Lee', phone: '+15559876543' },
-      providerDirectory: {
-        'lee': { name: 'Dr. Lee', phone: '+15559876543' },
-        'kim': { name: 'Dr. Kim', phone: '+15553456789' },
-      },
-      requiresPatientDoctorConfirmation: false,
-    };
+// Fix 3 tweak: Cap hints to first 2 keywords per provider
+async function getProviderRoutingConfig(supabase: any, officeId: string): Promise<{
+  routingType: string;
+  providerDirectory: Record<string, { name: string; phone: string }>;
+}> {
+  const { data: configs, error } = await supabase
+    .from('provider_routing_config')
+    .select('*')
+    .eq('office_id', officeId)
+    .eq('is_active', true);
+  
+  if (error || !configs || configs.length === 0) {
+    return { routingType: 'all_patients', providerDirectory: {} };
   }
-  // Default fallback
-  return {
-    officeId: 'default',
-    officeName: 'Default Office',
-    serviceLine: 'General',
-    onCallProvider: { name: 'Dr. Default', phone: '+15550000000' },
-    providerDirectory: {},
-    requiresPatientDoctorConfirmation: false,
-  };
+  
+  const providerDirectory: Record<string, { name: string; phone: string }> = {};
+  configs.forEach((config: any) => {
+    const formattedPhone = config.provider_phone.replace(/[^\d+]/g, '').startsWith('+')
+      ? config.provider_phone.replace(/[^\d+]/g, '')
+      : '+1' + config.provider_phone.replace(/\D/g, '');
+    const provider = { name: config.provider_name, phone: formattedPhone };
+
+    const keywords: string[] = config.match_keywords || config.provider_name.toLowerCase().split(/\s+/);
+    keywords.forEach((keyword: string) => {
+      providerDirectory[keyword.toLowerCase()] = provider;
+    });
+  });
+  
+  return { routingType: 'from_db', providerDirectory };
 }
 
 async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCallInfo> {
-  const officeId = getOfficeByPhone(calledPhone) || 'default';
-  return getProviderRoutingConfig(officeId);
+  const officeInfo = await getOfficeByPhone(supabase, calledPhone);
+  const today = new Date().toISOString().split('T')[0];
+  
+  const { data: assignment, error } = await supabase
+    .from('oncall_assignments')
+    .select('*')
+    .eq('office_id', officeInfo.officeId)
+    .eq('assignment_date', today)
+    .eq('status', 'active')
+    .single();
+  
+  const { providerDirectory } = await getProviderRoutingConfig(supabase, officeInfo.officeId);
+  
+  if (error || !assignment) {
+    return {
+      officeName: officeInfo.officeName,
+      officeId: officeInfo.officeId,
+      serviceLine: 'General Ophthalmology',
+      onCallProvider: { name: 'On-Call Provider', phone: '+15125551001' },
+      afterHoursStart: '17:00',
+      afterHoursEnd: '08:00',
+      requiresPatientDoctorConfirmation: false,
+      providerDirectory,
+    };
+  }
+  
+  const { data: routingConfig } = await supabase
+    .from('provider_routing_config')
+    .select('routing_type')
+    .eq('provider_user_id', assignment.provider_user_id)
+    .eq('is_active', true)
+    .single();
+  
+  return {
+    officeName: officeInfo.officeName,
+    officeId: officeInfo.officeId,
+    serviceLine: 'General Ophthalmology',
+    onCallProvider: { 
+      name: assignment.provider_name, 
+      phone: assignment.provider_phone.replace(/[^\d+]/g, '').startsWith('+') 
+        ? assignment.provider_phone.replace(/[^\d+]/g, '')
+        : '+1' + assignment.provider_phone.replace(/\D/g, '')
+    },
+    afterHoursStart: assignment.after_hours_start,
+    afterHoursEnd: assignment.after_hours_end,
+    requiresPatientDoctorConfirmation: routingConfig?.routing_type === 'own_patients_only',
+    providerDirectory,
+  };
 }
 
 async function logWebhookHealth(
   supabase: any,
   status: string,
-  message?: string,
-  metadata: any = {},
+  errorMessage?: string,
+  errorDetails?: Record<string, unknown>,
   callerPhone?: string,
   callSid?: string,
-  durationMs?: number
-): Promise<void> {
+  responseTimeMs?: number
+) {
   try {
     await supabase.from('webhook_health_logs').insert({
-      webhook: 'twilio-voice-webhook',
+      webhook_name: 'twilio-voice-webhook',
       status,
-      message,
-      metadata,
+      error_message: errorMessage,
+      error_details: errorDetails || {},
       caller_phone: callerPhone,
-      call_sid: callSid,
-      duration_ms: durationMs,
-      created_at: new Date().toISOString(),
+      twilio_call_sid: callSid,
+      response_time_ms: responseTimeMs,
     });
-  } catch (error) {
-    console.error('Failed to log webhook health:', error);
+  } catch (err) {
+    console.error('Failed to log webhook health:', err);
   }
 }
 
-// Disposition types
+// ============================================================================
+// STRICT 3-TIER DISPOSITION SYSTEM
+// ============================================================================
 type Disposition = 'ER_NOW' | 'URGENT_CALLBACK' | 'NEXT_BUSINESS_DAY';
 
-// Intake data interface
 interface IntakeData {
   patientName?: string;
   dateOfBirth?: string;
@@ -153,29 +218,25 @@ interface IntakeData {
   callbackConfirmed?: boolean;
   isEstablishedPatient?: boolean;
   establishedPatientGateLogged?: boolean;
-  isPrescriptionRequest?: boolean;
   hasRecentSurgery?: boolean;
-  primaryComplaint?: string;
-  symptoms: string[];
-  disposition?: Disposition;
-  dispositionReason?: string;
-  triageLevel?: string;
-  routedToProvider?: OnCallProvider;
   hasVisionLoss?: boolean;
   hasFlashesWithCurtain?: boolean;
   hasSeverePain?: boolean;
   hasTraumaChemical?: boolean;
-  stabilityResponse?: string;
   isWorsening?: boolean;
-  safetyCheckCompleted?: boolean;
+  stabilityResponse?: string;
+  isPrescriptionRequest?: boolean;
   medicationRequested?: string;
+  safetyCheckCompleted?: boolean;
   patientDoctor?: string;
-  stage?: string;
-  retry_counts?: Record<string, number>;
-  [key: string]: any;
+  routedToProvider?: { name: string; phone: string };
+  symptoms: string[];
+  primaryComplaint?: string;
+  disposition?: Disposition;
+  dispositionReason?: string;
+  triageLevel?: 'emergent' | 'urgent' | 'nonUrgent' | 'administrative' | 'prescription';
 }
 
-// Pre-call summary interface
 interface PreCallSummary {
   patientName: string;
   callbackNumber: string;
@@ -189,9 +250,9 @@ interface PreCallSummary {
   officeName: string;
   serviceLine: string;
   stabilityAssessment?: string;
+  patientLanguage?: string;
 }
 
-// Prescription keywords for detection
 const PRESCRIPTION_KEYWORDS = [
   'refill', 'prescription', 'medication', 'drops', 'eye drops',
   'medicine', 'rx', 'renew', 'renewal', 'out of', 'ran out',
@@ -208,14 +269,12 @@ function isAffirmative(text: string): boolean {
   return /\b(yes|yeah|yep|yup|correct|right|affirmative|uh-huh|mm-hmm|true|sí|si|correcto|claro|exacto|así es)\b/i.test(cleaned);
 }
 
-// 6C: containsAffirmative used in prescription_safety
 function containsAffirmative(text: string): boolean {
   const cleaned = text.toLowerCase().trim();
   if (/\b(no|not|don't|didn't|haven't|never|nunca)\b/i.test(cleaned)) return false;
   return /\b(yes|yeah|yep|yup|correct|right|i do|i am|i have|i had|uh-huh|mm-hmm|sí|si|correcto|claro|tengo|estoy)\b/i.test(cleaned);
 }
 
-// Worsening language detection + Spanish
 function isWorseningLanguage(text: string): boolean {
   const cleaned = text.toLowerCase().trim();
   return /\b(worse|worsening|getting bad|getting worse|just started|new today|suddenly|just happened|just now|escalating|increasing|more severe|rapidly|acute|peor|empeorando|empeoró|de repente|acaba de empezar|más severo)\b/i.test(cleaned);
@@ -304,7 +363,6 @@ serve(async (req) => {
 
     const onCallInfo = await getOnCallInfo(supabase, calledPhone);
 
-    // Get or create conversation record
     let { data: conversation } = await supabase
       .from('twilio_conversations')
       .select('*')
@@ -395,7 +453,6 @@ serve(async (req) => {
             selectedLang = 'es';
           }
         }
-        // Default to English on timeout or press 1
         transcript.push({ role: 'system', content: `Language selected: ${selectedLang}`, timestamp: new Date().toISOString() });
         twimlResponse = generateWelcomeWithEstablishedGate(onCallInfo.officeName, supabaseUrl, selectedLang);
         await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'established_gate', language: selectedLang });
@@ -421,10 +478,7 @@ serve(async (req) => {
             
             twimlResponse = generateNonPatientDeflection(onCallInfo.officeName, lang);
             await updateConversation(supabase, callSid, transcript, { 
-              ...metadata, 
-              stage: 'complete', 
-              intake_data: intakeData,
-              gate_result: 'non_patient_blocked'
+              ...metadata, stage: 'complete', intake_data: intakeData, gate_result: 'non_patient_blocked'
             });
           } else {
             intakeData.establishedPatientGateLogged = true;
@@ -572,7 +626,6 @@ serve(async (req) => {
         }
         break;
 
-      // Dynamic provider matching
       case 'ask_patient_doctor':
         if (speechResult) {
           const doctorResponse = speechResult.toLowerCase();
@@ -672,7 +725,6 @@ serve(async (req) => {
       // ============================================================================
       // STEP 4: SIMPLIFIED 4-QUESTION RED FLAG SCREEN
       // ============================================================================
-      
       case 'redflag_1':
         if (speechResult || digits) {
           const response = (speechResult || '').toLowerCase();
@@ -684,7 +736,6 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Sudden vision loss or major change';
             intakeData.symptoms.push('sudden vision loss');
             intakeData.primaryComplaint = 'Sudden vision loss';
-            
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
@@ -716,7 +767,6 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Flashes/floaters with curtain/shadow - possible retinal detachment';
             intakeData.symptoms.push('flashes/floaters with curtain/shadow');
             intakeData.primaryComplaint = 'Flashes/floaters with visual field loss';
-            
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
@@ -748,7 +798,6 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Severe eye pain';
             intakeData.symptoms.push('severe eye pain');
             intakeData.primaryComplaint = 'Severe eye pain';
-            
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
@@ -780,7 +829,6 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Eye trauma or chemical exposure';
             intakeData.symptoms.push('trauma/chemical exposure');
             intakeData.primaryComplaint = 'Eye trauma or chemical exposure';
-            
             twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
           } else {
@@ -1057,6 +1105,7 @@ async function handleDisposition(
 
   const targetProvider = intakeData.routedToProvider || onCallInfo.onCallProvider;
   
+  // 4A: Build stability assessment string
   let stabilityAssessment: string | undefined;
   if (intakeData.isWorsening !== undefined) {
     stabilityAssessment = intakeData.isWorsening
@@ -1077,11 +1126,12 @@ async function handleDisposition(
     officeName: onCallInfo.officeName,
     serviceLine: onCallInfo.serviceLine,
     stabilityAssessment,
+    patientLanguage: lang === 'es' ? 'Spanish' : 'English',
   };
 
   switch (disposition) {
     case 'ER_NOW': {
-      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'ER_NOW', officeId);
+      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'ER_NOW', officeId, lang);
       const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
       
       if (escalationResult?.id) {
@@ -1091,7 +1141,7 @@ async function handleDisposition(
     }
       
     case 'URGENT_CALLBACK': {
-      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'URGENT_CALLBACK', officeId);
+      const escalationResult = await createEscalationRecord(supabase, callSid, intakeData, summary, targetProvider, 'URGENT_CALLBACK', officeId, lang);
       const smsResult = await sendPreCallSMS(supabase, targetProvider.phone, summary, callSid, intakeData, escalationResult?.id);
       
       if (escalationResult?.id) {
@@ -1107,57 +1157,90 @@ async function handleDisposition(
   }
 }
 
-// ============================================================================
-// Escalation and logging helpers
-// ============================================================================
-
 async function createEscalationRecord(
   supabase: any,
   callSid: string,
   intakeData: IntakeData,
   summary: PreCallSummary,
-  targetProvider: OnCallProvider,
+  provider: { name: string; phone: string },
   disposition: Disposition,
-  officeId: string
-): Promise<any> {
-  try {
-    const { data, error } = await supabase.from('escalations').insert({
+  officeId: string,
+  lang: Lang = 'en'
+): Promise<{ id: string } | null> {
+  const { data: escalationRecord, error } = await supabase
+    .from('escalations')
+    .insert({
+      office_id: officeId,
       call_sid: callSid,
       patient_name: intakeData.patientName,
-      callback_number: intakeData.callbackNumber,
-      disposition,
-      disposition_reason: intakeData.dispositionReason,
-      triage_level: intakeData.triageLevel,
-      office_id: officeId,
-      assigned_provider_name: targetProvider.name,
-      assigned_provider_phone: targetProvider.phone,
-      structured_summary: summary,
+      callback_number: summary.callbackNumber,
+      date_of_birth: intakeData.dateOfBirth,
+      triage_level: disposition === 'ER_NOW' ? 'emergent' : 'urgent',
+      is_established_patient: intakeData.isEstablishedPatient,
+      has_recent_surgery: intakeData.hasRecentSurgery,
+      primary_complaint: intakeData.primaryComplaint,
+      symptoms: intakeData.symptoms,
+      structured_summary: { ...summary, disposition, dispositionReason: intakeData.dispositionReason, patientLanguage: lang === 'es' ? 'Spanish' : 'English' },
+      assigned_provider_name: provider.name,
+      assigned_provider_phone: provider.phone,
+      current_tier: 1,
       status: 'pending',
-      created_at: new Date().toISOString(),
-    }).select().single();
+      sla_target_minutes: disposition === 'ER_NOW' ? 15 : 30
+    })
+    .select()
+    .single();
 
-    if (error) {
-      console.error('Failed to create escalation record:', error);
-      return null;
-    }
-    return data;
-  } catch (error) {
-    console.error('Error creating escalation record:', error);
+  if (error) {
+    console.error('Error creating escalation:', error);
     return null;
   }
+
+  await supabase.from('escalation_events').insert({
+    escalation_id: escalationRecord.id,
+    event_type: 'initiated',
+    payload: { 
+      disposition,
+      disposition_reason: intakeData.dispositionReason,
+      provider: provider.name,
+      call_sid: callSid,
+      established_patient: intakeData.isEstablishedPatient,
+      patient_language: lang
+    }
+  });
+
+  return { id: escalationRecord.id };
 }
 
-async function updateEscalationWithSMS(supabase: any, escalationId: string, smsResult: any): Promise<void> {
-  try {
-    await supabase.from('escalations').update({
-      sms_sid: smsResult?.sid,
-      sms_status: smsResult?.status,
-      sms_error_code: smsResult?.error_code,
-      sms_error_message: smsResult?.error_message,
-    }).eq('id', escalationId);
-  } catch (error) {
-    console.error('Failed to update escalation with SMS info:', error);
+async function updateEscalationWithSMS(
+  supabase: any,
+  escalationId: string,
+  smsResult: { success: boolean; smsBody: string; templateUsed: string; twilioSid?: string }
+) {
+  const { error } = await supabase
+    .from('escalations')
+    .update({
+      sms_body: smsResult.smsBody,
+      sms_template_used: smsResult.templateUsed,
+      sms_twilio_sid: smsResult.twilioSid,
+      summary_sent_at: smsResult.success ? new Date().toISOString() : null
+    })
+    .eq('id', escalationId);
+
+  if (error) {
+    console.error('Error updating escalation with SMS details:', error);
+    return;
   }
+
+  await supabase.from('escalation_events').insert({
+    escalation_id: escalationId,
+    event_type: 'summary_sent',
+    payload: { 
+      template_used: smsResult.templateUsed,
+      char_count: smsResult.smsBody.length,
+      twilio_sid: smsResult.twilioSid,
+      sent_at: new Date().toISOString()
+    }
+  });
 }
 
 async function logNonEscalation(
@@ -1167,19 +1250,30 @@ async function logNonEscalation(
   intakeData: IntakeData,
   reason: string,
   officeId: string
-): Promise<void> {
-  try {
-    await supabase.from('non_escalation_logs').insert({
+) {
+  await supabase.from('notification_logs').insert({
+    notification_type: 'non_escalation',
+    recipient_phone: callerPhone,
+    office_id: officeId,
+    content: {
+      patient_name: intakeData.patientName,
+      callback_number: intakeData.callbackNumber,
+      disposition: intakeData.disposition || 'NEXT_BUSINESS_DAY',
+      reason: reason,
+      symptoms: intakeData.symptoms,
       call_sid: callSid,
-      caller_phone: callerPhone,
-      intake_data: intakeData,
-      reason,
-      office_id: officeId,
-      created_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Failed to log non-escalation:', error);
-  }
+      is_prescription: intakeData.isPrescriptionRequest,
+      medication: intakeData.medicationRequested,
+      stability_response: intakeData.stabilityResponse
+    },
+    status: 'logged',
+    metadata: {
+      workflow: 'next_business_day',
+      escalated: false,
+      disposition: intakeData.disposition || 'NEXT_BUSINESS_DAY',
+      safety_check_completed: intakeData.safetyCheckCompleted
+    }
+  });
 }
 
 async function logNonPatientBlocked(
@@ -1188,77 +1282,149 @@ async function logNonPatientBlocked(
   callerPhone: string,
   officeName: string,
   officeId: string
-): Promise<void> {
-  try {
-    await supabase.from('non_patient_blocks').insert({
+) {
+  await supabase.from('notification_logs').insert({
+    notification_type: 'non_patient_blocked',
+    recipient_phone: callerPhone,
+    office_id: officeId,
+    content: {
       call_sid: callSid,
-      caller_phone: callerPhone,
-      office_name: officeName,
-      office_id: officeId,
-      created_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Failed to log non-patient block:', error);
-  }
+      gate_result: 'Non-patient blocked',
+      office_name: officeName
+    },
+    status: 'logged',
+    metadata: {
+      workflow: 'established_patient_gate',
+      escalated: false,
+      gate_passed: false
+    }
+  });
 }
 
 // ============================================================================
-// SMS formatter section
+// SMS FORMATTER — 4A: Include stability + language
 // ============================================================================
-
-type SMSTemplate = 'urgent' | 'emergent' | 'nonUrgent';
+type SMSTemplate = 'long' | 'short';
 
 interface SMSFormatterInput {
-  patientName: string;
-  callbackNumber: string;
-  primaryComplaint: string;
+  escalationId?: string;
   disposition: Disposition;
-  triageLevel: string;
   officeName: string;
   serviceLine: string;
+  callerName: string;
+  dateOfBirth?: string;
+  isEstablishedPatient: boolean;
+  hasRecentSurgery: boolean;
+  callbackNumber: string;
+  chiefComplaint: string;
+  symptoms: string[];
   stabilityAssessment?: string;
+  patientLanguage?: string;
 }
 
+const MAX_SMS_CHARS = 600;
+
 function formatPhoneForDisplay(phone: string): string {
-  if (!phone) return '';
-  // Format as (XXX) XXX-XXXX for US numbers
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 10) {
-    return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
   }
   return phone;
 }
 
-function truncateString(str: string, maxLength: number): string {
-  if (!str) return '';
-  return str.length > maxLength ? str.slice(0, maxLength - 3) + '...' : str;
+function truncateString(str: string, maxLen: number): string {
+  if (!str) return 'unknown';
+  if (str.length <= maxLen) return str;
+  return str.substring(0, maxLen - 3) + '...';
 }
 
-function formatOnCallSummarySMS(input: SMSFormatterInput): string {
-  const { patientName, callbackNumber, primaryComplaint, disposition, triageLevel, officeName, serviceLine, stabilityAssessment } = input;
-  const dispositionText = disposition === 'ER_NOW' ? 'Emergent' : disposition === 'URGENT_CALLBACK' ? 'Urgent' : 'Non-urgent';
-  const stabilityText = stabilityAssessment ? `Stability: ${stabilityAssessment}. ` : '';
-  return `${dispositionText} callback for ${patientName}. Callback: ${formatPhoneForDisplay(callbackNumber)}. Complaint: ${truncateString(primaryComplaint, 100)}. ${stabilityText}Office: ${officeName} (${serviceLine}).`;
+function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templateUsed: SMSTemplate; charCount: number } {
+  const {
+    escalationId = 'pending',
+    disposition,
+    officeName,
+    serviceLine,
+    callerName,
+    dateOfBirth,
+    isEstablishedPatient,
+    hasRecentSurgery,
+    callbackNumber,
+    chiefComplaint,
+    symptoms,
+    stabilityAssessment,
+    patientLanguage,
+  } = input;
+
+  const safeName = callerName || 'Unknown';
+  const safeDOB = dateOfBirth || 'unknown';
+  const safeCallback = formatPhoneForDisplay(callbackNumber || 'unknown');
+  const safeCC = truncateString(chiefComplaint || 'Not stated', 120);
+  const estPatient = isEstablishedPatient ? 'Yes' : 'No';
+  const postOp = hasRecentSurgery ? 'Yes' : 'No';
+  const symptomList = symptoms.length > 0 ? symptoms.slice(0, 3).join(', ') : 'None specified';
+  const onsetLine = stabilityAssessment ? `\nOnset: ${stabilityAssessment}` : '';
+  const langLine = patientLanguage && patientLanguage !== 'English' ? `\nLang: ${patientLanguage}` : '';
+
+  const longBody = `ONCALL NAVIGATOR — ${officeName}
+DISPOSITION: ${disposition} | ${serviceLine}
+Patient: ${safeName} (DOB: ${safeDOB})
+Established: ${estPatient} | PostOp: ${postOp}
+Callback: ${safeCallback}
+Concern: ${safeCC}${onsetLine}${langLine}
+Symptoms: ${symptomList}
+ID: ${escalationId}
+Reply: ACK | CALL | ER | RESOLVED`;
+
+  if (longBody.length <= MAX_SMS_CHARS) {
+    return { body: longBody, templateUsed: 'long', charCount: longBody.length };
+  }
+
+  const shortBody = `${officeName} | ${disposition}
+${safeName} DOB:${safeDOB} Est:${estPatient} PostOp:${postOp}
+CB:${safeCallback}
+CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}${langLine ? `\n${langLine.trim()}` : ''}
+ID:${escalationId} Reply:ACK/CALL/ER/RESOLVED`;
+
+  return { body: shortBody, templateUsed: 'short', charCount: shortBody.length };
 }
 
 async function sendPreCallSMS(
-  supabase: any,
-  toPhone: string,
-  summary: PreCallSummary,
+  supabase: any, 
+  providerPhone: string, 
+  summary: PreCallSummary, 
   callSid: string,
   intakeData: IntakeData,
   escalationId?: string
-): Promise<any> {
+): Promise<{ success: boolean; smsBody: string; templateUsed: string; twilioSid?: string }> {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
   const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
 
   if (!twilioSid || !twilioAuth || !twilioPhone) {
-    console.error('Twilio credentials not configured for SMS');
-    return null;
+    console.error('Twilio credentials missing');
+    return { success: false, smsBody: '', templateUsed: 'long' };
   }
 
-  const body = formatOnCallSummarySMS(summary);
+  const smsResult = formatOnCallSummarySMS({
+    escalationId: escalationId,
+    disposition: summary.disposition,
+    officeName: summary.officeName,
+    serviceLine: summary.serviceLine,
+    callerName: summary.patientName,
+    dateOfBirth: intakeData.dateOfBirth,
+    isEstablishedPatient: summary.isEstablishedPatient,
+    hasRecentSurgery: summary.hasRecentSurgery,
+    callbackNumber: summary.callbackNumber,
+    chiefComplaint: summary.primaryComplaint,
+    symptoms: summary.symptoms,
+    stabilityAssessment: summary.stabilityAssessment,
+    patientLanguage: summary.patientLanguage,
+  });
+
+  console.log(`SMS formatted using ${smsResult.templateUsed} template (${smsResult.charCount} chars)`);
 
   try {
     const response = await fetch(
@@ -1270,9 +1436,9 @@ async function sendPreCallSMS(
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          To: toPhone,
+          To: providerPhone,
           From: twilioPhone,
-          Body: body,
+          Body: smsResult.body,
         }),
       }
     );
@@ -1281,47 +1447,45 @@ async function sendPreCallSMS(
 
     if (!response.ok) {
       console.error('Failed to send pre-call SMS:', result);
-      return null;
+      return { success: false, smsBody: smsResult.body, templateUsed: smsResult.templateUsed };
     }
 
-    // Log SMS event
-    await supabase.from('sms_logs').insert({
-      escalation_id: escalationId,
-      call_sid: callSid,
-      to_phone: toPhone,
-      from_phone: twilioPhone,
-      body,
-      sid: result.sid,
-      status: result.status,
-      error_code: result.error_code,
-      error_message: result.error_message,
-      created_at: new Date().toISOString(),
+    // Log SMS notification
+    await supabase.from('notification_logs').insert({
+      notification_type: 'escalation_sms',
+      recipient_phone: providerPhone,
+      office_id: summary.officeName,
+      content: { sms_body: smsResult.body, template_used: smsResult.templateUsed, call_sid: callSid },
+      status: 'sent',
+      twilio_sid: result.sid,
+      metadata: { workflow: 'pre_call_sms', escalation_id: escalationId }
     });
 
-    return result;
-  } catch (error) {
-    console.error('Error sending pre-call SMS:', error);
-    return null;
+    console.log('Pre-call SMS sent:', result.sid);
+    return { success: true, smsBody: smsResult.body, templateUsed: smsResult.templateUsed, twilioSid: result.sid };
+
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Error sending pre-call SMS:', err);
+    return { success: false, smsBody: smsResult.body, templateUsed: smsResult.templateUsed };
   }
 }
 
 // ============================================================================
-// Conversation update helper
+// CONVERSATION UPDATE HELPER
 // ============================================================================
-async function updateConversation(
-  supabase: any,
-  callSid: string,
-  transcript: any[],
-  metadata: any
-): Promise<void> {
-  try {
-    await supabase.from('twilio_conversations').update({
+async function updateConversation(supabase: any, callSid: string, transcript: any[], metadata: any) {
+  const { error } = await supabase
+    .from('twilio_conversations')
+    .update({
       transcript,
       metadata,
-      updated_at: new Date().toISOString(),
-    }).eq('call_sid', callSid);
-  } catch (error) {
-    console.error('Failed to update conversation:', error);
+      updated_at: new Date().toISOString()
+    })
+    .eq('call_sid', callSid);
+  
+  if (error) {
+    console.error('Error updating conversation:', error);
   }
 }
 
@@ -1347,7 +1511,6 @@ function formatPhoneDigitByDigit(phone: string): string {
 // TWIML GENERATORS - BILINGUAL
 // ============================================================================
 
-// Language gate — always bilingual, played first
 function generateLanguageGate(baseUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -1363,10 +1526,6 @@ function generateLanguageGate(baseUrl: string): string {
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
-
-// ============================================================================
-// DISPOSITION SCRIPTS
-// ============================================================================
 
 function generateERNowScript(lang: Lang = 'en'): string {
   const v = getVoice(lang);
@@ -1475,34 +1634,22 @@ function generateNonPatientDeflection(officeName: string, lang: Lang = 'en'): st
 function generateRetryExhausted(baseUrl: string, fallbackType: 'non_patient' | 'skip' | 'urgent', lang: Lang = 'en'): string {
   const v = getVoice(lang);
   if (fallbackType === 'non_patient') {
-    if (lang === 'es') {
-      return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Tengo dificultad para escucharle. Permítame asegurarme de que su preocupación sea atendida.</Say>
-  <Pause length="1"/>
-  <Say voice="${v}">Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1.</Say>
-  <Pause length="1"/>
-  <Say voice="${v}">De lo contrario, por favor llame a nuestra oficina durante el horario de atención.</Say>
-  <Pause length="1"/>
-  <Say voice="${v}">Adiós.</Say>
-  <Hangup/>
-</Response>`;
-    }
+    const msg = lang === 'es'
+      ? [`Tengo dificultad para escucharle. Permítame asegurarme de que su preocupación sea atendida.`, `Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1.`, `De lo contrario, por favor llame a nuestra oficina durante el horario de atención.`, `Adiós.`]
+      : [`I'm having trouble hearing you. Let me make sure your concern is addressed.`, `If this is an emergency, please go to the nearest emergency room or call 911.`, `Otherwise, please call our office during business hours.`, `Goodbye.`];
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">I'm having trouble hearing you. Let me make sure your concern is addressed.</Say>
+  <Say voice="${v}">${msg[0]}</Say>
   <Pause length="1"/>
-  <Say voice="${v}">If this is an emergency, please go to the nearest emergency room or call 911.</Say>
+  <Say voice="${v}">${msg[1]}</Say>
   <Pause length="1"/>
-  <Say voice="${v}">Otherwise, please call our office during business hours.</Say>
+  <Say voice="${v}">${msg[2]}</Say>
   <Pause length="1"/>
-  <Say voice="${v}">Goodbye.</Say>
+  <Say voice="${v}">${msg[3]}</Say>
   <Hangup/>
 </Response>`;
   }
-  const troubleMsg = lang === 'es' 
-    ? 'Tengo dificultad para escucharle. Permítame asegurarme de que su preocupación sea atendida.'
-    : "I'm having trouble hearing you. Let me make sure your concern is addressed.";
+  const troubleMsg = lang === 'es' ? 'Tengo dificultad para escucharle.' : "I'm having trouble hearing you.";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${troubleMsg}</Say>
@@ -1513,7 +1660,6 @@ function generateRetryExhausted(baseUrl: string, fallbackType: 'non_patient' | '
 // ============================================================================
 // INTAKE QUESTIONS
 // ============================================================================
-
 function generateWelcomeWithEstablishedGate(officeName: string, baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
@@ -1551,23 +1697,13 @@ function generateWelcomeWithEstablishedGate(officeName: string, baseUrl: string,
 function generateCollectNameResponse(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Muy bien, voy a tomar algunos datos rápidos.</Say>
-  <Pause length="1"/>
-  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
-    <Say voice="${v}">¿Cuál es su nombre completo?</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [intro, q] = lang === 'es' ? ['Muy bien, voy a tomar algunos datos rápidos.', '¿Cuál es su nombre completo?'] : ['Great, I\'ll collect a few quick details.', 'What is your full name?'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">Great, I'll collect a few quick details.</Say>
+  <Say voice="${v}">${intro}</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="${v}">What is your full name?</Say>
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${q}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1619,25 +1755,16 @@ function generateCallbackWithDefault(callerPhone: string, baseUrl: string, lang:
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
   const digitByDigit = formatPhoneDigitByDigit(callerPhone || '');
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
-    <Say voice="${v}">¿Podemos llamarle al ${escapeXml(digitByDigit)}?</Say>
-    <Pause length="1"/>
-    <Say voice="${v}">Oprima 1 para sí, o diga o ingrese un número diferente.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [q, hint] = lang === 'es'
+    ? [`¿Podemos llamarle al ${escapeXml(digitByDigit)}?`, 'Oprima 1 para sí, o diga o ingrese un número diferente.']
+    : [`Can I reach you at ${escapeXml(digitByDigit)}?`, 'Press 1 for yes, or say or enter a different number.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}">
-    <Say voice="${v}">Can I reach you at ${escapeXml(digitByDigit)}?</Say>
+  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
+    <Say voice="${v}">${q}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">Press 1 for yes, or say or enter a different number.</Say>
+    <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1647,31 +1774,21 @@ function generateCallbackConfirmation(callback: string, baseUrl: string, lang: L
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const digitByDigit = formatPhoneDigitByDigit(callback);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="sí, no, correcto"${gl}>
-    <Say voice="${v}">Tengo ${escapeXml(digitByDigit)}. ¿Es correcto?</Say>
-    <Pause length="1"/>
-    <Say voice="${v}">Oprima 1 para sí, 2 para ingresar otro número.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [q, hint, hintAttr] = lang === 'es'
+    ? [`Tengo ${escapeXml(digitByDigit)}. ¿Es correcto?`, 'Oprima 1 para sí, 2 para ingresar otro número.', 'sí, no, correcto']
+    : [`I have ${escapeXml(digitByDigit)}. Is that correct?`, 'Press 1 for yes, 2 to re-enter.', "yes, no, correct, that's right"];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="yes, no, correct, that's right">
-    <Say voice="${v}">I have ${escapeXml(digitByDigit)}. Is that correct?</Say>
+  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
+    <Say voice="${v}">${q}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">Press 1 for yes, 2 to re-enter.</Say>
+    <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
 }
 
-// Fix 3 tweak: Cap hints to first 2 keywords per provider
 function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { name: string; phone: string }>, baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
@@ -1688,7 +1805,6 @@ function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { na
   hintsList.push(lang === 'es' ? "no sé" : "don't know");
   const hints = hintsList.join(', ');
   const msg = lang === 'es' ? '¿Quién es su doctor en nuestra oficina?' : 'Who is your doctor at our office?';
-  
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1703,28 +1819,20 @@ function generatePostOpQuestionWithTransition(patientName: string | undefined, b
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  let nameGreeting: string;
-  if (lang === 'es') {
-    nameGreeting = patientName && patientName !== 'Not provided'
-      ? `Gracias, ${escapeXml(patientName)}.`
-      : 'Gracias.';
-  } else {
-    nameGreeting = patientName && patientName !== 'Not provided' 
-      ? `Thank you, ${escapeXml(patientName)}.` 
-      : 'Thank you.';
-  }
-  const safetyMsg = lang === 'es' ? 'Ahora necesito hacerle unas preguntas rápidas de seguridad.' : 'Now I need to ask a few quick safety questions.';
-  const surgeryQ = lang === 'es' ? '¿Ha tenido cirugía de ojos en los últimos 14 días?' : 'Have you had eye surgery in the last 14 days?';
-  const dtmfHint = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
-  
+  const nameGreeting = lang === 'es'
+    ? (patientName && patientName !== 'Not provided' ? `Gracias, ${escapeXml(patientName)}.` : 'Gracias.')
+    : (patientName && patientName !== 'Not provided' ? `Thank you, ${escapeXml(patientName)}.` : 'Thank you.');
+  const [safety, surgery, dtmf] = lang === 'es'
+    ? ['Ahora necesito hacerle unas preguntas rápidas de seguridad.', '¿Ha tenido cirugía de ojos en los últimos 14 días?', 'Oprima 1 para sí, 2 para no.']
+    : ['Now I need to ask a few quick safety questions.', 'Have you had eye surgery in the last 14 days?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">${nameGreeting} ${safetyMsg}</Say>
+  <Say voice="${v}">${nameGreeting} ${safety}</Say>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
-    <Say voice="${v}">${surgeryQ}</Say>
+    <Say voice="${v}">${surgery}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">${dtmfHint}</Say>
+    <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1734,10 +1842,7 @@ function generatePostOpQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const q = lang === 'es' 
-    ? '¿Ha tenido cirugía de ojos en los últimos 14 días?' 
-    : 'Have you had eye surgery in the last 14 days?';
-  const dtmf = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
+  const [q, dtmf] = lang === 'es' ? ['¿Ha tenido cirugía de ojos en los últimos 14 días?', 'Oprima 1 para sí, 2 para no.'] : ['Have you had eye surgery in the last 14 days?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1753,23 +1858,15 @@ function generatePostOpQuestion(baseUrl: string, lang: Lang = 'en'): string {
 function generatePostOpComplaintQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Entendido. ¿Puede decirme brevemente qué le pasa?</Say>
-  <Pause length="1"/>
-  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
-    <Say voice="${v}">Por favor describa lo que está experimentando.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [intro, prompt] = lang === 'es'
+    ? ['Entendido. ¿Puede decirme brevemente qué le pasa?', 'Por favor describa lo que está experimentando.']
+    : ['Got it. Can you briefly tell me what\'s going on?', 'Please describe what you\'re experiencing.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">Got it. Can you briefly tell me what's going on?</Say>
+  <Say voice="${v}">${intro}</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="${v}">Please describe what you're experiencing.</Say>
+  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${prompt}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1782,10 +1879,9 @@ function generateRedFlag1_VisionLoss(baseUrl: string, lang: Lang = 'en'): string
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const q = lang === 'es' 
-    ? '¿Tiene pérdida repentina de visión o un cambio importante y repentino en su visión?' 
-    : 'Are you having sudden vision loss or a major sudden change in vision?';
-  const dtmf = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
+  const [q, dtmf] = lang === 'es'
+    ? ['¿Tiene pérdida repentina de visión o un cambio importante y repentino en su visión?', 'Oprima 1 para sí, 2 para no.']
+    : ['Are you having sudden vision loss or a major sudden change in vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1802,10 +1898,9 @@ function generateRedFlag2_FlashesCurtain(baseUrl: string, lang: Lang = 'en'): st
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const q = lang === 'es'
-    ? '¿Ve destellos o puntos flotantes nuevos junto con una cortina o sombra en su visión?'
-    : 'Do you see new flashes or floaters together with a curtain or shadow in your vision?';
-  const dtmf = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
+  const [q, dtmf] = lang === 'es'
+    ? ['¿Ve destellos o puntos flotantes nuevos junto con una cortina o sombra en su visión?', 'Oprima 1 para sí, 2 para no.']
+    : ['Do you see new flashes or floaters together with a curtain or shadow in your vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1822,8 +1917,7 @@ function generateRedFlag3_SeverePain(baseUrl: string, lang: Lang = 'en'): string
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const q = lang === 'es' ? '¿Tiene dolor severo en el ojo en este momento?' : 'Are you having severe eye pain right now?';
-  const dtmf = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
+  const [q, dtmf] = lang === 'es' ? ['¿Tiene dolor severo en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.'] : ['Are you having severe eye pain right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1840,8 +1934,7 @@ function generateRedFlag4_TraumaChemical(baseUrl: string, lang: Lang = 'en'): st
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const q = lang === 'es' ? '¿Hubo algún trauma en su ojo o exposición a químicos?' : 'Was there any trauma to your eye or any chemical exposure?';
-  const dtmf = lang === 'es' ? 'Oprima 1 para sí, 2 para no.' : 'Press 1 for yes, 2 for no.';
+  const [q, dtmf] = lang === 'es' ? ['¿Hubo algún trauma en su ojo o exposición a químicos?', 'Oprima 1 para sí, 2 para no.'] : ['Was there any trauma to your eye or any chemical exposure?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1857,23 +1950,15 @@ function generateRedFlag4_TraumaChemical(baseUrl: string, lang: Lang = 'en'): st
 function generateBriefComplaintQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Bien. Ahora, con sus propias palabras, ¿qué le pasa con sus ojos esta noche?</Say>
-  <Pause length="1"/>
-  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
-    <Say voice="${v}">Por favor describa brevemente su preocupación.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [intro, prompt] = lang === 'es'
+    ? ['Bien. Ahora, con sus propias palabras, ¿qué le pasa con sus ojos esta noche?', 'Por favor describa brevemente su preocupación.']
+    : ['Good. Now, in your own words, what\'s going on with your eyes tonight?', 'Please briefly describe your concern.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">Good. Now, in your own words, what's going on with your eyes tonight?</Say>
+  <Say voice="${v}">${intro}</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="${v}">Please briefly describe your concern.</Say>
+  <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${prompt}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1882,25 +1967,16 @@ function generateBriefComplaintQuestion(baseUrl: string, lang: Lang = 'en'): str
 function generateStabilityQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="peor, empeorando, igual, estable"${gl}>
-    <Say voice="${v}">¿Esto está empeorando ahora mismo, o ha estado más o menos igual?</Say>
-    <Pause length="1"/>
-    <Say voice="${v}">Oprima 1 si está empeorando, o 2 si ha estado más o menos igual.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [q, dtmf, hintAttr] = lang === 'es'
+    ? ['¿Esto está empeorando ahora mismo, o ha estado más o menos igual?', 'Oprima 1 si está empeorando, o 2 si ha estado más o menos igual.', 'peor, empeorando, igual, estable']
+    : ['Is this getting worse right now, or has it been about the same?', 'Press 1 if it\'s getting worse, or 2 if it\'s been about the same.', 'worse, getting worse, about the same, same, stable, few days'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="worse, getting worse, about the same, same, stable, few days">
-    <Say voice="${v}">Is this getting worse right now, or has it been about the same?</Say>
+  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
+    <Say voice="${v}">${q}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">Press 1 if it's getting worse, or 2 if it's been about the same.</Say>
+    <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1912,23 +1988,15 @@ function generateStabilityQuestion(baseUrl: string, lang: Lang = 'en'): string {
 function generatePrescriptionShortcutIntro(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Puedo ayudarle con su solicitud de receta. Necesito algunos detalles.</Say>
-  <Pause length="1"/>
-  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
-    <Say voice="${v}">¿Cuál es su nombre completo?</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [intro, q] = lang === 'es'
+    ? ['Puedo ayudarle con su solicitud de receta. Necesito algunos detalles.', '¿Cuál es su nombre completo?']
+    : ['I can help with your prescription request. Let me get a few details.', 'What is your full name?'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">I can help with your prescription request. Let me get a few details.</Say>
+  <Say voice="${v}">${intro}</Say>
   <Pause length="1"/>
-  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST">
-    <Say voice="${v}">What is your full name?</Say>
+  <Gather input="speech" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${q}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1952,25 +2020,16 @@ function generatePrescriptionCallbackQuestion(callerPhone: string, baseUrl: stri
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
   const digitByDigit = formatPhoneDigitByDigit(callerPhone || '');
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
-    <Say voice="${v}">¿Podemos llamarle al ${escapeXml(digitByDigit)}?</Say>
-    <Pause length="1"/>
-    <Say voice="${v}">Oprima 1 para sí, o diga o ingrese un número diferente.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [q, hint] = lang === 'es'
+    ? [`¿Podemos llamarle al ${escapeXml(digitByDigit)}?`, 'Oprima 1 para sí, o diga o ingrese un número diferente.']
+    : [`Can I reach you at ${escapeXml(digitByDigit)}?`, 'Press 1 for yes, or say or enter a different number.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}">
-    <Say voice="${v}">Can I reach you at ${escapeXml(digitByDigit)}?</Say>
+  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
+    <Say voice="${v}">${q}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">Press 1 for yes, or say or enter a different number.</Say>
+    <Say voice="${v}">${hint}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -1994,25 +2053,16 @@ function generatePrescriptionSafetyCheck(baseUrl: string, lang: Lang = 'en'): st
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
-    <Say voice="${v}">Solo para confirmar—¿tiene pérdida repentina de visión, dolor severo en el ojo, o una lesión en el ojo en este momento?</Say>
-    <Pause length="1"/>
-    <Say voice="${v}">Oprima 1 para sí, 2 para no.</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-  }
+  const [q, dtmf] = lang === 'es'
+    ? ['Solo para confirmar—¿tiene pérdida repentina de visión, dolor severo en el ojo, o una lesión en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.']
+    : ['Just to confirm—are you having sudden vision loss, severe eye pain, or an eye injury right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}">
-    <Say voice="${v}">Just to confirm—are you having sudden vision loss, severe eye pain, or an eye injury right now?</Say>
+  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
+    <Say voice="${v}">${q}</Say>
     <Pause length="1"/>
-    <Say voice="${v}">Press 1 for yes, 2 for no.</Say>
+    <Say voice="${v}">${dtmf}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
@@ -2020,20 +2070,14 @@ function generatePrescriptionSafetyCheck(baseUrl: string, lang: Lang = 'en'): st
 
 function generateVoicemailPrompt(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
-  if (lang === 'es') {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="${v}">Por favor deje un mensaje breve después del tono.</Say>
-  <Record maxLength="120" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" />
-  <Say voice="${v}">No recibí una grabación. Adiós.</Say>
-  <Hangup/>
-</Response>`;
-  }
+  const [msg, fallback] = lang === 'es'
+    ? ['Por favor deje un mensaje breve después del tono.', 'No recibí una grabación. Adiós.']
+    : ['Please leave a brief message after the beep.', "I didn't receive a recording. Goodbye."];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${v}">Please leave a brief message after the beep.</Say>
+  <Say voice="${v}">${msg}</Say>
   <Record maxLength="120" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" />
-  <Say voice="${v}">I didn't receive a recording. Goodbye.</Say>
+  <Say voice="${v}">${fallback}</Say>
   <Hangup/>
 </Response>`;
 }
