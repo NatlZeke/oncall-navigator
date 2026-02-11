@@ -62,7 +62,7 @@ serve(async (req) => {
           const reminderBody = `⚠️ REMINDER: Pending escalation ${escalation.id.substring(0, 8)} — ${escalation.patient_name || 'Unknown'} — ${escalation.structured_summary?.disposition || escalation.triage_level}. SLA expired (${Math.round(elapsedMinutes)} min). Reply ACK/CALL/ER.`;
 
           try {
-            await fetch(
+            const reminderResult = await fetch(
               `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
               {
                 method: 'POST',
@@ -77,7 +77,23 @@ serve(async (req) => {
                 }),
               }
             );
+            const reminderResponse = await reminderResult.json();
             console.log(`Reminder SMS sent to ${escalation.assigned_provider_phone} for escalation ${escalation.id}`);
+
+            // Log to notification_logs for admin visibility
+            await supabase.from('notification_logs').insert({
+              notification_type: 'escalation_sms_reminder',
+              recipient_phone: escalation.assigned_provider_phone,
+              office_id: escalation.office_id,
+              content: { sms_body: reminderBody, escalation_id: escalation.id },
+              status: reminderResult.ok ? 'sent' : 'failed',
+              twilio_sid: reminderResponse?.sid || null,
+              metadata: {
+                workflow: 'sla_reminder_tier1',
+                escalation_id: escalation.id,
+                elapsed_minutes: Math.round(elapsedMinutes),
+              }
+            });
           } catch (smsError) {
             console.error('Failed to send reminder SMS:', smsError);
           }
@@ -108,7 +124,7 @@ serve(async (req) => {
                   ? backup.provider_phone.replace(/[^\d+]/g, '')
                   : '+1' + backup.provider_phone.replace(/\D/g, '');
                 
-                await fetch(
+                const tier2Result = await fetch(
                   `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
                   {
                     method: 'POST',
@@ -123,7 +139,24 @@ serve(async (req) => {
                     }),
                   }
                 );
+                const tier2Response = await tier2Result.json();
                 console.log(`Tier 2 SMS sent to ${backupPhone} for escalation ${escalation.id}`);
+
+                // Log to notification_logs for admin visibility
+                await supabase.from('notification_logs').insert({
+                  notification_type: 'escalation_sms_tier2',
+                  recipient_phone: backupPhone,
+                  office_id: escalation.office_id,
+                  content: { sms_body: tier2Body, escalation_id: escalation.id },
+                  status: tier2Result.ok ? 'sent' : 'failed',
+                  twilio_sid: tier2Response?.sid || null,
+                  metadata: {
+                    workflow: 'sla_escalation_tier2',
+                    escalation_id: escalation.id,
+                    elapsed_minutes: Math.round(elapsedMinutes),
+                    backup_provider: backup.provider_name,
+                  }
+                });
               } catch (smsError) {
                 console.error('Failed to send tier 2 SMS:', smsError);
               }

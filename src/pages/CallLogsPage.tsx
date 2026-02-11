@@ -86,12 +86,20 @@ const CallLogsPage = () => {
   const getDecisionBadge = (call: CallLog) => {
     const stage = call.metadata?.stage;
     const isUrgent = call.metadata?.urgency_assessment;
+    // ConversationRelay stores disposition inside intake_data or at top level
+    const md = call.metadata as Record<string, unknown> | undefined;
+    const crDisposition = (md?.intake_data as Record<string, unknown>)?.disposition as string
+      || md?.disposition as string
+      || undefined;
 
-    if (isUrgent || stage === 'urgent') {
-      return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> Urgent - Forwarded</Badge>;
+    if (crDisposition === 'ER_NOW' || isUrgent || stage === 'urgent') {
+      return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> ER Now</Badge>;
     }
-    if (stage === 'assessed' || stage === 'message_non_urgent') {
-      return <Badge variant="secondary" className="gap-1"><CheckCircle className="h-3 w-3" /> Non-Urgent - Message</Badge>;
+    if (crDisposition === 'URGENT_CALLBACK') {
+      return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> Urgent Callback</Badge>;
+    }
+    if (crDisposition === 'NEXT_BUSINESS_DAY' || stage === 'assessed' || stage === 'message_non_urgent') {
+      return <Badge variant="secondary" className="gap-1"><CheckCircle className="h-3 w-3" /> Next Business Day</Badge>;
     }
     if (stage === 'gathering') {
       return <Badge variant="outline" className="gap-1"><MessageSquare className="h-3 w-3" /> Gathering Info</Badge>;
