@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.sla-escalation-check]
 verify_jwt = true
+
+[functions.conversation-relay-complete]
+verify_jwt = false

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/MainLayout';
-import { Building2, MapPin, Phone, Plus, ChevronRight, Clock, Globe } from 'lucide-react';
+import { Building2, Phone, Plus, ChevronRight, Clock, Globe, Mic } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useApp } from '@/contexts/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,6 +18,8 @@ interface OfficeRow {
   phone_numbers: string[];
   is_active: boolean | null;
   spanish_enabled: boolean;
+  use_conversation_relay: boolean;
+  conversation_relay_url: string | null;
   business_hours_start: string | null;
   business_hours_end: string | null;
 }
@@ -58,6 +61,38 @@ const OfficesPage = () => {
 
     setOffices(prev => prev.map(o => o.id === office.id ? { ...o, spanish_enabled: newValue } : o));
     toast.success(`Spanish language support ${newValue ? 'enabled' : 'disabled'} for ${office.name}`);
+  };
+
+  const handleToggleCR = async (office: OfficeRow, newValue: boolean) => {
+    const { error } = await supabase
+      .from('offices')
+      .update({ use_conversation_relay: newValue } as any)
+      .eq('id', office.id);
+
+    if (error) {
+      toast.error('Failed to update ConversationRelay setting');
+      return;
+    }
+
+    setOffices(prev => prev.map(o => o.id === office.id ? { ...o, use_conversation_relay: newValue } : o));
+    toast.success(`ConversationRelay ${newValue ? 'enabled' : 'disabled'} for ${office.name}`);
+  };
+
+  const handleCRUrlChange = async (office: OfficeRow, url: string) => {
+    setOffices(prev => prev.map(o => o.id === office.id ? { ...o, conversation_relay_url: url } : o));
+  };
+
+  const handleCRUrlSave = async (office: OfficeRow) => {
+    const { error } = await supabase
+      .from('offices')
+      .update({ conversation_relay_url: office.conversation_relay_url } as any)
+      .eq('id', office.id);
+
+    if (error) {
+      toast.error('Failed to save WebSocket URL');
+      return;
+    }
+    toast.success('WebSocket URL saved');
   };
 
   const handleViewOffice = (office: OfficeRow) => {
@@ -144,6 +179,37 @@ const OfficesPage = () => {
                     checked={office.spanish_enabled}
                     onCheckedChange={(val) => handleToggleSpanish(office, val)}
                   />
+                </div>
+
+                {/* ConversationRelay Toggle */}
+                <div className="py-3 border-t space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Mic className="h-4 w-4 text-muted-foreground" />
+                      <Label htmlFor={`cr-${office.id}`} className="text-sm cursor-pointer">
+                        ConversationRelay (Voice AI)
+                      </Label>
+                    </div>
+                    <Switch
+                      id={`cr-${office.id}`}
+                      checked={office.use_conversation_relay}
+                      onCheckedChange={(val) => handleToggleCR(office, val)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    When enabled, calls use real-time voice AI instead of touchtone prompts. Requires a running ConversationRelay server.
+                  </p>
+                  {office.use_conversation_relay && (
+                    <div className="flex gap-2">
+                      <Input
+                        className="text-xs"
+                        placeholder="wss://oncall-relay.fly.dev/intake"
+                        value={office.conversation_relay_url || ''}
+                        onChange={(e) => handleCRUrlChange(office, e.target.value)}
+                        onBlur={() => handleCRUrlSave(office)}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div

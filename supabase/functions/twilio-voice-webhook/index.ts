@@ -64,25 +64,31 @@ async function validateTwilioSignature(
 // ============================================================================
 // OFFICE CONFIGURATION — 5A: Dynamic office lookup from DB
 // ============================================================================
-async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string; spanishEnabled: boolean }> {
+async function getOfficeByPhone(supabase: any, calledPhone: string): Promise<{ officeId: string; officeName: string; spanishEnabled: boolean; useConversationRelay: boolean; conversationRelayUrl: string | null }> {
   try {
     const { data: office, error } = await supabase
       .from('offices')
-      .select('id, name, spanish_enabled')
+      .select('id, name, spanish_enabled, use_conversation_relay, conversation_relay_url')
       .contains('phone_numbers', [calledPhone])
       .eq('is_active', true)
       .limit(1)
       .single();
 
     if (!error && office) {
-      return { officeId: office.id, officeName: office.name, spanishEnabled: office.spanish_enabled ?? false };
+      return {
+        officeId: office.id,
+        officeName: office.name,
+        spanishEnabled: office.spanish_enabled ?? false,
+        useConversationRelay: office.use_conversation_relay ?? false,
+        conversationRelayUrl: office.conversation_relay_url ?? null,
+      };
     }
   } catch (err) {
     console.warn('Office lookup failed, using fallback:', err);
   }
 
   console.warn(`No office found for phone ${calledPhone}, using default`);
-  return { officeId: 'office-1', officeName: 'Hill Country Eye Center', spanishEnabled: false };
+  return { officeId: 'office-1', officeName: 'Hill Country Eye Center', spanishEnabled: false, useConversationRelay: false, conversationRelayUrl: null };
 }
 
 interface OnCallInfo {
@@ -95,6 +101,8 @@ interface OnCallInfo {
   requiresPatientDoctorConfirmation: boolean;
   providerDirectory: Record<string, { name: string; phone: string }>;
   spanishEnabled: boolean;
+  useConversationRelay: boolean;
+  conversationRelayUrl: string | null;
 }
 
 // ============================================================================
@@ -157,6 +165,8 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
       requiresPatientDoctorConfirmation: false,
       providerDirectory,
       spanishEnabled: officeInfo.spanishEnabled,
+      useConversationRelay: officeInfo.useConversationRelay,
+      conversationRelayUrl: officeInfo.conversationRelayUrl,
     };
   }
   
@@ -182,6 +192,8 @@ async function getOnCallInfo(supabase: any, calledPhone: string): Promise<OnCall
     requiresPatientDoctorConfirmation: routingConfig?.routing_type === 'own_patients_only',
     providerDirectory,
     spanishEnabled: officeInfo.spanishEnabled,
+    useConversationRelay: officeInfo.useConversationRelay,
+    conversationRelayUrl: officeInfo.conversationRelayUrl,
   };
 }
 
@@ -371,6 +383,39 @@ serve(async (req) => {
       .select('*')
       .eq('call_sid', callSid)
       .single();
+
+    // ConversationRelay: For new calls to CR-enabled offices, return CR TwiML immediately
+    if (!conversation && onCallInfo.useConversationRelay && onCallInfo.conversationRelayUrl) {
+      await supabase.from('twilio_conversations').insert({
+        call_sid: callSid,
+        caller_phone: callerPhone,
+        called_phone: calledPhone,
+        conversation_type: 'voice_conversationrelay',
+        status: 'in_progress',
+        transcript: [],
+        metadata: {
+          office_name: onCallInfo.officeName,
+          office_id: onCallInfo.officeId,
+          service_line: onCallInfo.serviceLine,
+          oncall_name: onCallInfo.onCallProvider.name,
+          oncall_phone: onCallInfo.onCallProvider.phone,
+          caller_phone: callerPhone,
+          transport: 'conversation_relay',
+        }
+      });
+
+      const crTwiml = generateConversationRelayTwiml(
+        onCallInfo.conversationRelayUrl,
+        onCallInfo.officeName,
+        onCallInfo.spanishEnabled || false
+      );
+
+      await logWebhookHealth(supabase, 'success', undefined, { stage: 'conversation_relay_handoff' }, callerPhone, callSid, Date.now() - startTime);
+
+      return new Response(crTwiml, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
+      });
+    }
 
     if (!conversation) {
       const { data: newConversation, error } = await supabase
@@ -1513,6 +1558,42 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+// ============================================================================
+// CONVERSATION RELAY TWIML GENERATOR
+// ============================================================================
+function generateConversationRelayTwiml(
+  wsUrl: string,
+  officeName: string,
+  spanishEnabled: boolean
+): string {
+  const welcomeGreeting = spanishEnabled
+    ? `Thank you for calling ${escapeXml(officeName)} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Gracias por llamar al servicio fuera de horario de ${escapeXml(officeName)}. Si esto es una emergencia, cuelgue y marque el 9 1 1. For English, say English. Para español, diga español.`
+    : `Thank you for calling ${escapeXml(officeName)} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Are you an established patient with ${escapeXml(officeName)}?`;
+
+  const hints = 'yes, no, established patient, floaters, flashes, vision loss, drops, refill, prescription, voicemail, surgery, pain, trauma, chemical, worse, same, stable';
+
+  const languageTag = spanishEnabled
+    ? `\n    <Language code="es" ttsProvider="amazon" voice="Polly.Lupe-Neural" transcriptionProvider="deepgram" speechModel="nova-2" />`
+    : '';
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <ConversationRelay
+    url="${escapeXml(wsUrl)}"
+    welcomeGreeting="${escapeXml(welcomeGreeting)}"
+    ttsProvider="amazon"
+    voice="Polly.Joanna-Neural"
+    transcriptionProvider="deepgram"
+    speechModel="nova-2-medical"
+    interruptible="true"
+    profanityFilter="false"
+    dtmfDetection="true"
+    hints="${escapeXml(hints)}"
+  >${languageTag}
+  </ConversationRelay>
+</Response>`;
 }
 
 function formatPhoneDigitByDigit(phone: string): string {
