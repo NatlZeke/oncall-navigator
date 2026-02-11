@@ -289,24 +289,38 @@ server.listen(PORT, () => {
 const shutdown = () => {
   console.log('SIGTERM received — draining connections');
 
-  // Stop accepting new WebSocket connections
-  wss.close(async () => {
-    console.log('All WebSocket connections closed');
-    server.close(() => {
-      console.log('HTTP server closed — exiting');
-      process.exit(0);
-    });
-  });
-
-  // Save all active intakes before shutting down
+  // Save all active intakes BEFORE closing WebSockets
+  const savePromises: Promise<void>[] = [];
   for (const [sid, conn] of activeConnections) {
-    if (conn.state && !conn.state.intake.disposition) {
-      conn.state.intake.disposition = 'NEXT_BUSINESS_DAY';
-      conn.state.intake.dispositionReason = 'Server shutdown during triage';
+    if (conn.state) {
+      if (!conn.state.intake.disposition) {
+        conn.state.intake.disposition = 'NEXT_BUSINESS_DAY';
+        conn.state.intake.dispositionReason = 'Server shutdown during triage';
+      }
+      savePromises.push(
+        saveCompletedIntake(conn.state).then(() => {
+          console.log(`[${sid}] Intake saved during shutdown`);
+        }).catch((err) => {
+          console.error(`[${sid}] Failed to save intake during shutdown:`, err);
+        })
+      );
     }
-    // saveCompletedIntake runs in the WebSocket close handler
     conn.ws.close();
   }
+
+  // Wait for all saves, then shut down HTTP server
+  Promise.allSettled(savePromises).then((results) => {
+    const saved = results.filter(r => r.status === 'fulfilled').length;
+    console.log(`Shutdown: saved ${saved}/${results.length} active intakes`);
+
+    wss.close(() => {
+      console.log('All WebSocket connections closed');
+      server.close(() => {
+        console.log('HTTP server closed — exiting');
+        process.exit(0);
+      });
+    });
+  });
 
   // Force exit after 10 seconds if draining stalls
   setTimeout(() => {
