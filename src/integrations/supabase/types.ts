@@ -537,6 +537,7 @@ export type Database = {
         Row: {
           business_hours_end: string | null
           business_hours_start: string | null
+          conversation_relay_url: string | null
           created_at: string | null
           id: string
           is_active: boolean | null
@@ -545,10 +546,12 @@ export type Database = {
           spanish_enabled: boolean
           timezone: string | null
           updated_at: string | null
+          use_conversation_relay: boolean
         }
         Insert: {
           business_hours_end?: string | null
           business_hours_start?: string | null
+          conversation_relay_url?: string | null
           created_at?: string | null
           id: string
           is_active?: boolean | null
@@ -557,10 +560,12 @@ export type Database = {
           spanish_enabled?: boolean
           timezone?: string | null
           updated_at?: string | null
+          use_conversation_relay?: boolean
         }
         Update: {
           business_hours_end?: string | null
           business_hours_start?: string | null
+          conversation_relay_url?: string | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
@@ -569,6 +574,7 @@ export type Database = {
           spanish_enabled?: boolean
           timezone?: string | null
           updated_at?: string | null
+          use_conversation_relay?: boolean
         }
         Relationships: []
       }
