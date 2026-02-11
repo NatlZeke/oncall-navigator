@@ -1598,15 +1598,11 @@ function generateConversationRelayTwiml(
 
 function formatPhoneDigitByDigit(phone: string): string {
   const digitsOnly = phone.replace(/\D/g, '');
-  // Group as area-code, prefix, line (e.g. "512. 528. 1144") for natural pacing
-  if (digitsOnly.length === 10) {
-    return `${digitsOnly.slice(0, 3)}, ${digitsOnly.slice(3, 6)}, ${digitsOnly.slice(6)}`;
-  }
+  // Read each digit individually with period pauses for clarity
   if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
-    return `${digitsOnly.slice(1, 4)}, ${digitsOnly.slice(4, 7)}, ${digitsOnly.slice(7)}`;
+    return digitsOnly.slice(1).split('').join('. ');
   }
-  // Fallback: group in threes
-  return digitsOnly.match(/.{1,3}/g)?.join(', ') || digitsOnly;
+  return digitsOnly.split('').join('. ');
 }
 
 // ============================================================================
