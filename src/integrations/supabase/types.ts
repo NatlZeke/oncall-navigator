@@ -492,6 +492,47 @@ export type Database = {
         }
         Relationships: []
       }
+      office_settings: {
+        Row: {
+          auto_escalation_enabled: boolean | null
+          auto_escalation_minutes: number | null
+          max_consecutive_shifts_warning: number | null
+          office_id: string
+          publish_locks_schedule: boolean | null
+          require_admin_approval_for_swaps: boolean | null
+          require_backup_provider: boolean | null
+          updated_at: string | null
+        }
+        Insert: {
+          auto_escalation_enabled?: boolean | null
+          auto_escalation_minutes?: number | null
+          max_consecutive_shifts_warning?: number | null
+          office_id: string
+          publish_locks_schedule?: boolean | null
+          require_admin_approval_for_swaps?: boolean | null
+          require_backup_provider?: boolean | null
+          updated_at?: string | null
+        }
+        Update: {
+          auto_escalation_enabled?: boolean | null
+          auto_escalation_minutes?: number | null
+          max_consecutive_shifts_warning?: number | null
+          office_id?: string
+          publish_locks_schedule?: boolean | null
+          require_admin_approval_for_swaps?: boolean | null
+          require_backup_provider?: boolean | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "office_settings_office_id_fkey"
+            columns: ["office_id"]
+            isOneToOne: true
+            referencedRelation: "offices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offices: {
         Row: {
           business_hours_end: string | null

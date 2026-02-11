@@ -1079,6 +1079,9 @@ serve(async (req) => {
     console.error('Error in twilio-voice-webhook:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     await logWebhookHealth(supabase, 'error', errorMessage, { stack: error instanceof Error ? error.stack : undefined });
+    // INTENTIONAL: Error fallback always speaks both languages regardless of spanish_enabled setting.
+    // A caller experiencing a medical emergency should hear "dial 911" in their language even if
+    // the office hasn't enabled Spanish support.
     return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna-Neural">Technical difficulties. If this is an emergency, dial 911.</Say>
