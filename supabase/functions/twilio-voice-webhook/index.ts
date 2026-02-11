@@ -8,6 +8,27 @@ const corsHeaders = {
 };
 
 // ============================================================================
+// ELEVENLABS VOICE CONFIGURATION (ConversationRelay only)
+// ============================================================================
+// Browse voices at: https://www.twilio.com/docs/voice/conversationrelay/voice-configuration
+// Voice attribute format: VOICE_ID-MODEL-SPEED_STABILITY_SIMILARITY
+//
+// Medical triage tuning rationale:
+//   Speed 0.95    — slightly slower for clarity with elderly patients and medical terms
+//   Stability 0.75 — high consistency, avoids unpredictable inflection on clinical language
+//   Similarity 0.75 — faithful to voice character while allowing natural variation
+//
+// To change voices: browse the Twilio voice picker linked above, copy a voice ID,
+// and replace the ID portion below (everything before the first hyphen).
+
+const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-flash_v2_5-0.95_0.75_0.75';  // Sarah — warm, calm American female
+const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-flash_v2_5-0.95_0.75_0.75';  // Charlotte — multilingual, warm female
+
+// Polly voices remain for <Say>/<Gather> path (ElevenLabs not available for <Say>)
+const POLLY_VOICE_EN = 'Polly.Joanna-Neural';
+const POLLY_VOICE_ES = 'Polly.Lupe-Neural';
+
+// ============================================================================
 // SIGNATURE VALIDATION
 // ============================================================================
 async function validateTwilioSignature(
@@ -321,7 +342,7 @@ const MAX_RETRIES = 3;
 type Lang = 'en' | 'es';
 
 function getVoice(lang: Lang): string {
-  return lang === 'es' ? 'Polly.Lupe-Neural' : 'Polly.Joanna-Neural';
+  return lang === 'es' ? POLLY_VOICE_ES : POLLY_VOICE_EN;
 }
 
 function gatherLang(lang: Lang): string {
@@ -1569,13 +1590,33 @@ function generateConversationRelayTwiml(
   spanishEnabled: boolean
 ): string {
   const welcomeGreeting = spanishEnabled
-    ? `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Gracias por llamar al servicio fuera de horario de ${officeName}. Si esto es una emergencia, cuelgue y marque el 9 1 1. For English, say English. Para español, diga español.`
-    : `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Are you an established patient with ${officeName}?`;
+    ? `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial nine one one. Gracias por llamar al servicio fuera de horario de ${officeName}. Si esto es una emergencia, cuelgue y marque el nueve uno uno. For English, say English. Para español, diga español.`
+    : `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial nine one one. Are you an established patient with ${officeName}?`;
 
-  const hints = 'yes, no, established patient, floaters, flashes, vision loss, drops, refill, prescription, voicemail, surgery, pain, trauma, chemical, worse, same, stable';
+  // Expanded hints for ophthalmology triage — improves Deepgram STT accuracy
+  const hints = [
+    // Responses
+    'yes, no, yeah, yep, nope, correct, si, no',
+    // Triage flow
+    'established patient, new patient, voicemail, callback, prescription, refill, drops',
+    // Red flags
+    'floaters, flashes, vision loss, blurry, curtain, shadow, blind',
+    'pain, severe pain, trauma, chemical, chemical exposure, injury',
+    // Post-op
+    'surgery, post-op, cataract, LASIK, retina, injection',
+    // Stability
+    'worse, worsening, better, same, stable, improving',
+    // Medical terms for ophthalmology
+    'vitreous, detachment, retinal, glaucoma, macular, corneal, keratitis',
+    'conjunctivitis, pink eye, stye, chalazion, iritis, uveitis',
+    'timolol, latanoprost, prednisolone, moxifloxacin, erythromycin',
+    // Language selection
+    'English, español, Spanish',
+  ].join(', ');
 
+  // Spanish language tag — also uses ElevenLabs with a Spanish-capable voice
   const languageTag = spanishEnabled
-    ? `\n    <Language code="es" ttsProvider="amazon" voice="Polly.Lupe-Neural" transcriptionProvider="deepgram" speechModel="nova-2" />`
+    ? `\n    <Language code="es" ttsProvider="ElevenLabs" voice="${escapeXml(ELEVENLABS_VOICE_ES)}" transcriptionProvider="deepgram" speechModel="nova-2" />`
     : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -1583,8 +1624,9 @@ function generateConversationRelayTwiml(
   <ConversationRelay
     url="${escapeXml(wsUrl)}"
     welcomeGreeting="${escapeXml(welcomeGreeting)}"
-    ttsProvider="amazon"
-    voice="Polly.Joanna-Neural"
+    ttsProvider="ElevenLabs"
+    voice="${escapeXml(ELEVENLABS_VOICE_EN)}"
+    elevenlabsTextNormalization="on"
     transcriptionProvider="deepgram"
     speechModel="nova-2-medical"
     interruptible="true"

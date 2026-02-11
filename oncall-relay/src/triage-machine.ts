@@ -11,6 +11,36 @@
 import type { TriageState, TriageResult, Disposition, Lang } from './types.js';
 
 // ============================================================================
+// TTS HELPERS — ElevenLabs pronunciation normalization
+// ============================================================================
+
+/**
+ * Formats a phone number for natural ElevenLabs TTS pronunciation.
+ * "+15125551234" → "five one two, five five five, one two three four"
+ * Falls back to digit-by-digit if format is unexpected.
+ */
+function formatPhoneForTTS(phone: string): string {
+  const digitWords: Record<string, string> = {
+    '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+    '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine',
+  };
+
+  const digits = phone.replace(/\D/g, '');
+  // Strip leading country code "1" for US numbers
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+
+  if (local.length === 10) {
+    const area = local.slice(0, 3).split('').map(d => digitWords[d]).join(' ');
+    const prefix = local.slice(3, 6).split('').map(d => digitWords[d]).join(' ');
+    const line = local.slice(6).split('').map(d => digitWords[d]).join(' ');
+    return `${area}, ${prefix}, ${line}`;
+  }
+
+  // Non-standard length — just read digit by digit
+  return local.split('').map(d => digitWords[d] || d).join(' ');
+}
+
+// ============================================================================
 // DETECTION HELPERS — ported from twilio-voice-webhook/index.ts
 // ============================================================================
 
@@ -91,8 +121,8 @@ export function processInput(
     state.intake.dispositionReason = state.intake.dispositionReason || 'Caller requested voicemail';
     return {
       responseText: t(state.lang,
-        "I understand you'd like to leave a message. Unfortunately I can't record a voicemail in this mode. Please call back and press 0 at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial 911. Goodbye.",
-        "Entiendo que desea dejar un mensaje. Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima 0 al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el 9 1 1. Adiós."
+        "I understand you'd like to leave a message. Unfortunately I can't record a voicemail in this mode. Please call back and press zero at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial nine one one. Goodbye.",
+        "Entiendo que desea dejar un mensaje. Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima cero al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Adiós."
       ),
       nextStage: 'complete',
       endCall: true,
@@ -133,8 +163,8 @@ export function processInput(
           // Retry exhausted fallback: non-patient deflection
           () => ({
             responseText: t(state.lang,
-              "I'm having trouble hearing you. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call 911. Otherwise, please call our office during business hours. Goodbye.",
-              "Tengo dificultad para escucharle. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1. De lo contrario, por favor llame a nuestra oficina durante el horario de atención. Adiós."
+              "I'm having trouble hearing you. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call nine one one. Otherwise, please call our office during business hours. Goodbye.",
+              "Tengo dificultad para escucharle. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, por favor llame a nuestra oficina durante el horario de atención. Adiós."
             ),
             nextStage: 'complete' as const,
             endCall: true,
@@ -148,8 +178,8 @@ export function processInput(
       if (!isEstablished) {
         return {
           responseText: t(state.lang,
-            "Thanks for calling. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call 911. Otherwise, please call our office during business hours to schedule an appointment. Goodbye.",
-            "Gracias por llamar. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1. De lo contrario, por favor llame a nuestra oficina durante el horario de atención para hacer una cita. Adiós."
+            "Thanks for calling. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call nine one one. Otherwise, please call our office during business hours to schedule an appointment. Goodbye.",
+            "Gracias por llamar. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, por favor llame a nuestra oficina durante el horario de atención para hacer una cita. Adiós."
           ),
           nextStage: 'complete',
           endCall: true,
@@ -247,10 +277,11 @@ export function processInput(
 
       // Caller provided a different number — confirm before proceeding
       state.intake.callbackNumber = input || digit || state.callerPhone;
+      const spokenCallback = formatPhoneForTTS(state.intake.callbackNumber);
       return {
         responseText: t(state.lang,
-          `I have your callback number as ${state.intake.callbackNumber}. Is that correct?`,
-          `Tengo su número de devolución de llamada como ${state.intake.callbackNumber}. ¿Es correcto?`
+          `I have your callback number as ${spokenCallback}. Is that correct?`,
+          `Tengo su número de devolución de llamada como ${spokenCallback}. ¿Es correcto?`
         ),
         nextStage: 'confirm_callback',
         endCall: false,
@@ -264,8 +295,8 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'confirm_callback',
           t(state.lang,
-            `I have ${state.intake.callbackNumber}. Is that correct? Say yes or no.`,
-            `Tengo ${state.intake.callbackNumber}. ¿Es correcto? Diga sí o no.`
+            `I have ${formatPhoneForTTS(state.intake.callbackNumber!)}. Is that correct? Say yes or no.`,
+            `Tengo ${formatPhoneForTTS(state.intake.callbackNumber!)}. ¿Es correcto? Diga sí o no.`
           ),
           () => {
             // Retry exhausted — accept current number
@@ -811,8 +842,8 @@ function dispositionResponse(state: TriageState): TriageResult {
     case 'URGENT_CALLBACK':
       return {
         responseText: t(state.lang,
-          "Thank you for that information. Let me get this to the right place. I'm sending your information to the on-call doctor now. They will call you back shortly. If your condition worsens or you develop an emergency, please go to the nearest emergency room or call 911. Goodbye.",
-          "Gracias por esa información. Permítame enviar esto al lugar correcto. Estoy enviando su información al doctor de guardia ahora. Le devolverán la llamada pronto. Si su condición empeora o tiene una emergencia, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1. Adiós."
+          "Thank you for that information. Let me get this to the right place. I'm sending your information to the on-call doctor now. They will call you back shortly. If your condition worsens or you develop an emergency, please go to the nearest emergency room or call nine one one. Goodbye.",
+          "Gracias por esa información. Permítame enviar esto al lugar correcto. Estoy enviando su información al doctor de guardia ahora. Le devolverán la llamada pronto. Si su condición empeora o tiene una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. Adiós."
         ),
         nextStage: 'complete',
         endCall: true,
@@ -828,8 +859,8 @@ function dispositionResponse(state: TriageState): TriageResult {
 function nextBusinessDayResponse(state: TriageState): TriageResult {
   return {
     responseText: t(state.lang,
-      `Thank you for that information. Based on what you've described, this can be handled during our next business day. Please call ${state.officeName} when the office opens and we'll be happy to help you. If your condition worsens or you develop sudden vision loss, severe pain, or an eye injury, please go to the nearest emergency room or call 911. Goodbye.`,
-      `Gracias por esa información. Basado en lo que ha descrito, esto puede ser atendido durante nuestro próximo día hábil. Por favor llame a ${state.officeName} cuando abra la oficina y con gusto le atenderemos. Si su condición empeora o desarrolla pérdida repentina de visión, dolor severo, o una lesión en el ojo, por favor vaya a la sala de emergencias más cercana o llame al 9 1 1. Adiós.`
+      `Thank you for that information. Based on what you've described, this can be handled during our next business day. Please call ${state.officeName} when the office opens and we'll be happy to help you. If your condition worsens or you develop sudden vision loss, severe pain, or an eye injury, please go to the nearest emergency room or call nine one one. Goodbye.`,
+      `Gracias por esa información. Basado en lo que ha descrito, esto puede ser atendido durante nuestro próximo día hábil. Por favor llame a ${state.officeName} cuando abra la oficina y con gusto le atenderemos. Si su condición empeora o desarrolla pérdida repentina de visión, dolor severo, o una lesión en el ojo, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. Adiós.`
     ),
     nextStage: 'complete',
     endCall: true,
