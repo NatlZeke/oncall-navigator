@@ -492,6 +492,42 @@ export type Database = {
         }
         Relationships: []
       }
+      offices: {
+        Row: {
+          business_hours_end: string | null
+          business_hours_start: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          phone_numbers: string[]
+          timezone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          business_hours_end?: string | null
+          business_hours_start?: string | null
+          created_at?: string | null
+          id: string
+          is_active?: boolean | null
+          name: string
+          phone_numbers?: string[]
+          timezone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          business_hours_end?: string | null
+          business_hours_start?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          phone_numbers?: string[]
+          timezone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       oncall_assignment_audit_logs: {
         Row: {
           action: string

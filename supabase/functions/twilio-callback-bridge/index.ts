@@ -11,9 +11,10 @@ const corsHeaders = {
 function getCallerId(officeId: string): string {
   const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
   
-  // Office-specific overrides (if configured)
+  // 4B: Office-specific caller ID overrides — use the practice's verified number
   const officeCallerIds: Record<string, string> = {
-    // 'office-1': '+15125281144', // Uncomment when verified
+    'office-1': '+15125281144',
+    'office-2': '+15125281155',
   };
   
   return officeCallerIds[officeId] || twilioPhone || '';
