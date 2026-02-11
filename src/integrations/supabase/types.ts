@@ -774,6 +774,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          match_keywords: string[] | null
           office_id: string
           provider_name: string
           provider_phone: string
@@ -785,6 +786,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          match_keywords?: string[] | null
           office_id: string
           provider_name: string
           provider_phone: string
@@ -796,6 +798,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          match_keywords?: string[] | null
           office_id?: string
           provider_name?: string
           provider_phone?: string

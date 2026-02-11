@@ -11,7 +11,9 @@ import {
   Voicemail,
   UserCheck,
   UserX,
-  Scissors
+  Scissors,
+  TrendingUp,
+  Minus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,29 +23,37 @@ const DecisionNode = ({
   icon: Icon, 
   yesPath, 
   noPath,
+  yesLabel,
+  noLabel,
   isRedFlag = false,
-  isGate = false
+  isGate = false,
+  isStability = false
 }: { 
   question: string; 
   icon: React.ElementType;
   yesPath: 'escalate' | 'next' | 'continue';
-  noPath: 'next' | 'voicemail' | 'block' | 'urgent';
+  noPath: 'next' | 'voicemail' | 'block' | 'urgent' | 'next_day';
+  yesLabel?: string;
+  noLabel?: string;
   isRedFlag?: boolean;
   isGate?: boolean;
+  isStability?: boolean;
 }) => (
   <div className="relative">
     <div className={cn(
       "p-3 rounded-lg border-2 text-center",
       isGate
         ? "bg-warning/10 border-warning/30"
+        : isStability
+        ? "bg-primary/10 border-primary/30"
         : isRedFlag 
           ? "bg-destructive/10 border-destructive/30" 
           : "bg-primary/5 border-primary/20"
     )}>
       <div className="flex items-center justify-center gap-2 mb-1">
-        <Icon className={cn("h-4 w-4", isGate ? "text-warning" : isRedFlag ? "text-destructive" : "text-primary")} />
+        <Icon className={cn("h-4 w-4", isGate ? "text-warning" : isStability ? "text-primary" : isRedFlag ? "text-destructive" : "text-primary")} />
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {isGate ? 'Patient Gate' : isRedFlag ? 'Red Flag' : 'Question'}
+          {isGate ? 'Patient Gate' : isStability ? 'Stability Check' : isRedFlag ? 'Red Flag' : 'Question'}
         </span>
       </div>
       <p className="text-sm font-medium">{question}</p>
@@ -54,7 +64,7 @@ const DecisionNode = ({
       <div className="flex flex-col items-center">
         <div className="h-4 w-0.5 bg-success" />
         <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-[10px]">
-          YES
+          {yesLabel || 'YES'}
         </Badge>
         <div className="h-4 w-0.5 bg-success" />
         {yesPath === 'escalate' ? (
@@ -71,7 +81,7 @@ const DecisionNode = ({
       <div className="flex flex-col items-center">
         <div className="h-4 w-0.5 bg-muted-foreground/30" />
         <Badge variant="outline" className="bg-muted text-muted-foreground text-[10px]">
-          NO
+          {noLabel || 'NO'}
         </Badge>
         <div className="h-4 w-0.5 bg-muted-foreground/30" />
         {noPath === 'block' ? (
@@ -88,6 +98,11 @@ const DecisionNode = ({
           <div className="flex items-center gap-1 text-xs text-warning font-medium">
             <UserCheck className="h-3 w-3" />
             CALLBACK
+          </div>
+        ) : noPath === 'next_day' ? (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground font-medium">
+            <Voicemail className="h-3 w-3" />
+            NEXT DAY
           </div>
         ) : (
           <ArrowDown className="h-3 w-3 text-muted-foreground" />
@@ -106,7 +121,7 @@ export function TriageFlowChart() {
           <CardTitle className="text-lg">Simplified Triage Decision Flowchart</CardTitle>
         </div>
         <CardDescription>
-          Optimized for speed with established patient gate, post-op shortcut, and 4-question red flag screen
+          Optimized for speed with established patient gate, post-op shortcut, stability filter, and 4-question red flag screen
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -119,6 +134,10 @@ export function TriageFlowChart() {
           <div className="flex items-center gap-1.5">
             <div className="h-3 w-3 rounded-full bg-destructive" />
             <span>Red Flag = ER NOW</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-full bg-primary" />
+            <span>Stability Check</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-3 w-3 rounded-full bg-success" />
@@ -201,7 +220,6 @@ export function TriageFlowChart() {
             <p className="text-xs font-bold text-destructive text-center mb-3">4-QUESTION RED FLAG SCREEN</p>
             
             <div className="space-y-3">
-              {/* Q1 */}
               <DecisionNode 
                 question="Q1: Sudden vision loss or major sudden change?"
                 icon={Eye}
@@ -209,12 +227,9 @@ export function TriageFlowChart() {
                 noPath="next"
                 isRedFlag
               />
-
               <div className="flex justify-center">
                 <ArrowDown className="h-4 w-4 text-muted-foreground" />
               </div>
-
-              {/* Q2 */}
               <DecisionNode 
                 question="Q2: New flashes/floaters WITH curtain or shadow?"
                 icon={Eye}
@@ -222,12 +237,9 @@ export function TriageFlowChart() {
                 noPath="next"
                 isRedFlag
               />
-
               <div className="flex justify-center">
                 <ArrowDown className="h-4 w-4 text-muted-foreground" />
               </div>
-
-              {/* Q3 */}
               <DecisionNode 
                 question="Q3: Severe eye pain right now?"
                 icon={Zap}
@@ -235,25 +247,52 @@ export function TriageFlowChart() {
                 noPath="next"
                 isRedFlag
               />
-
               <div className="flex justify-center">
                 <ArrowDown className="h-4 w-4 text-muted-foreground" />
               </div>
-
-              {/* Q4 */}
               <DecisionNode 
                 question="Q4: Trauma or chemical exposure?"
                 icon={AlertTriangle}
                 yesPath="escalate"
-                noPath="urgent"
+                noPath="next"
                 isRedFlag
               />
             </div>
           </div>
 
+          <div className="flex justify-center mb-4">
+            <ArrowDown className="h-5 w-5 text-muted-foreground" />
+          </div>
+
+          {/* Brief Complaint */}
+          <div className="text-center mb-4 p-3 rounded-lg bg-muted/30 border border-dashed">
+            <p className="text-xs text-muted-foreground mb-1">BRIEF COMPLAINT</p>
+            <p className="text-sm italic">"Briefly, what's going on with your eyes tonight?"</p>
+          </div>
+
+          <div className="flex justify-center mb-4">
+            <ArrowDown className="h-5 w-5 text-muted-foreground" />
+          </div>
+
+          {/* Stability Check — NEW */}
+          <DecisionNode 
+            question="Is this getting worse right now, or has it been about the same?"
+            icon={TrendingUp}
+            yesPath="next"
+            noPath="next_day"
+            yesLabel="WORSE"
+            noLabel="SAME"
+            isStability
+          />
+
+          <div className="mt-2 mb-4 p-2 rounded-lg bg-primary/10 border border-primary/20 text-center text-xs">
+            <span className="text-primary font-medium">Worsening → CALLBACK</span>
+            <span className="text-muted-foreground"> | </span>
+            <span className="text-muted-foreground font-medium">Stable → NEXT BUSINESS DAY</span>
+          </div>
+
           {/* Outcomes */}
           <div className="grid grid-cols-3 gap-3">
-            {/* ER NOW */}
             <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-center">
               <div className="flex items-center justify-center gap-1 mb-2">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -272,13 +311,12 @@ export function TriageFlowChart() {
               </div>
             </div>
 
-            {/* URGENT CALLBACK */}
             <div className="p-3 rounded-xl bg-warning/10 border border-warning/20 text-center">
               <div className="flex items-center justify-center gap-1 mb-2">
                 <UserCheck className="h-4 w-4 text-warning" />
                 <span className="font-bold text-warning text-sm">CALLBACK</span>
               </div>
-              <p className="text-[10px] text-muted-foreground">Post-op OR other concern</p>
+              <p className="text-[10px] text-muted-foreground">Post-op OR worsening</p>
               <div className="space-y-0.5 text-[10px] mt-2">
                 <div className="flex items-center gap-1 text-warning">
                   <CheckCircle2 className="h-2.5 w-2.5" />
@@ -291,13 +329,12 @@ export function TriageFlowChart() {
               </div>
             </div>
 
-            {/* NEXT BIZ DAY */}
             <div className="p-3 rounded-xl bg-muted/50 border border-border text-center">
               <div className="flex items-center justify-center gap-1 mb-2">
                 <Voicemail className="h-4 w-4 text-muted-foreground" />
                 <span className="font-bold text-muted-foreground text-sm">NEXT DAY</span>
               </div>
-              <p className="text-[10px] text-muted-foreground">Prescription refills</p>
+              <p className="text-[10px] text-muted-foreground">Rx refills OR stable concern</p>
               <div className="space-y-0.5 text-[10px] mt-2">
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <XCircle className="h-2.5 w-2.5" />
@@ -311,7 +348,7 @@ export function TriageFlowChart() {
             </div>
           </div>
 
-          {/* Safety Message - Always */}
+          {/* Safety Message */}
           <div className="mt-4 p-3 rounded-lg bg-warning/10 border border-warning/20">
             <div className="flex items-center gap-2 mb-1">
               <AlertTriangle className="h-4 w-4 text-warning" />
@@ -325,7 +362,7 @@ export function TriageFlowChart() {
         </div>
 
         {/* Key Points */}
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
             <p className="text-sm">
               <strong>Established Patient Gate:</strong> Non-patients are blocked at the start 
@@ -336,6 +373,12 @@ export function TriageFlowChart() {
             <p className="text-sm">
               <strong>Post-Op Shortcut:</strong> Any patient with surgery in the last 14 days 
               is routed to URGENT CALLBACK regardless of symptoms.
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <p className="text-sm">
+              <strong>Stability Filter:</strong> Non-red-flag, non-post-op concerns are filtered: 
+              worsening → callback, stable → next business day. Reduces unnecessary wake-ups.
             </p>
           </div>
         </div>

@@ -15,9 +15,13 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 
+// TODO: These should be pulled from app config / database in a multi-tenant setup
+const OFFICE_NAME = 'Hill Country Eye Center';
+const AFTER_HOURS_PHONE = '(737) 252-1937';
+const PROTOCOL_VERSION = '2.1.0';
+const LAST_UPDATED = new Date('2026-02-11');
+
 export default function IntakeFlowReviewPage() {
-  const lastUpdated = new Date('2026-01-22');
-  const protocolVersion = "2.0.0";
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,17 +35,17 @@ export default function IntakeFlowReviewPage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold">After-Hours Intake Protocol</h1>
-                <p className="text-sm text-muted-foreground">Hill Country Eye Center</p>
+                <p className="text-sm text-muted-foreground">{OFFICE_NAME}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <Badge variant="outline" className="gap-1">
                 <FileText className="h-3 w-3" />
-                v{protocolVersion}
+                v{PROTOCOL_VERSION}
               </Badge>
               <Badge variant="secondary" className="gap-1">
                 <Clock className="h-3 w-3" />
-                Updated {format(lastUpdated, 'MMM d, yyyy')}
+                Updated {format(LAST_UPDATED, 'MMM d, yyyy')}
               </Badge>
             </div>
           </div>
@@ -97,7 +101,7 @@ export default function IntakeFlowReviewPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-mono font-bold">(737) 252-1937</p>
+            <p className="text-2xl font-mono font-bold">{AFTER_HOURS_PHONE}</p>
             <p className="text-sm text-muted-foreground mt-1">
               All after-hours calls are routed through the AI intake system
             </p>
@@ -162,10 +166,10 @@ export default function IntakeFlowReviewPage() {
         {/* Footer */}
         <div className="mt-12 pt-8 border-t text-center text-sm text-muted-foreground">
           <p>
-            <strong>Hill Country Eye Center</strong> — After-Hours Intake Protocol
+            <strong>{OFFICE_NAME}</strong> — After-Hours Intake Protocol
           </p>
           <p className="mt-1">
-            Protocol Version {protocolVersion} • Last Updated {format(lastUpdated, 'MMMM d, yyyy')}
+            Protocol Version {PROTOCOL_VERSION} • Last Updated {format(LAST_UPDATED, 'MMMM d, yyyy')}
           </p>
           <p className="mt-2">
             For questions about this protocol, contact the office administrator.

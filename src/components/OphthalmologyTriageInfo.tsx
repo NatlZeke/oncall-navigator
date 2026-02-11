@@ -10,7 +10,8 @@ import {
   ArrowRight,
   Shield,
   UserCheck,
-  Scissors
+  Scissors,
+  TrendingUp
 } from 'lucide-react';
 
 const triageSignals = [
@@ -32,8 +33,7 @@ const triageSignals = [
     icon: Zap,
     signals: [
       'Post-op patient (surgery within 14 days)',
-      'Any other concern from established patient',
-      'Symptoms not meeting ER criteria',
+      'Worsening symptoms (getting worse right now)',
     ],
     action: 'SMS summary to on-call, doctor calls back'
   },
@@ -42,11 +42,11 @@ const triageSignals = [
     badge: 'outline' as const,
     icon: Pill,
     signals: [
+      'Stable non-urgent concern (about the same)',
       'Prescription refill requests',
       'Medication renewals',
-      'Non-urgent administrative matters',
     ],
-    action: 'Logged for next business day (safety check required)'
+    action: 'Logged for next business day (doctor NOT contacted)'
   },
   {
     category: 'NON-PATIENT BLOCKED',
@@ -65,9 +65,11 @@ const intakeQuestions = [
   'Established patient? (GATE)',
   'Full name',
   'Date of birth',
-  'Callback number (with read-back)',
+  'Callback number (with default)',
   'Post-op in last 14 days?',
   '4 red-flag questions',
+  'Brief complaint',
+  'Stability check',
 ];
 
 export function OphthalmologyTriageInfo() {
@@ -80,11 +82,11 @@ export function OphthalmologyTriageInfo() {
         </div>
         <CardDescription>
           Optimized for speed with an <strong>established patient gate</strong>, <strong>post-op shortcut</strong>, 
-          and <strong>4-question red flag screen</strong>. Non-patients are blocked immediately.
+          <strong>4-question red flag screen</strong>, and <strong>stability filter</strong>. Non-patients are blocked immediately.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Established Patient Gate - Primary Focus */}
+        {/* Established Patient Gate */}
         <div className="p-4 rounded-lg bg-warning/10 border-2 border-warning/30">
           <h4 className="font-bold text-base mb-3 flex items-center gap-2 text-warning">
             <UserCheck className="h-5 w-5" />
@@ -161,6 +163,38 @@ export function OphthalmologyTriageInfo() {
           </div>
         </div>
 
+        {/* Stability Check — NEW */}
+        <div className="p-4 rounded-lg bg-primary/10 border-2 border-primary/30">
+          <h4 className="font-bold text-base mb-3 flex items-center gap-2 text-primary">
+            <TrendingUp className="h-5 w-5" />
+            Stability Check (After Red Flags Pass)
+          </h4>
+          <p className="text-sm text-muted-foreground mb-3">
+            For patients who pass all 4 red flags with "no" and describe a non-prescription concern:
+          </p>
+          <p className="text-sm font-medium mb-3">
+            <strong>"Is this getting worse right now, or has it been about the same?"</strong>
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="p-3 rounded bg-warning/10 border border-warning/20">
+              <p className="text-sm font-semibold text-warning">
+                WORSE → URGENT CALLBACK
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Worsening symptoms are escalated to on-call provider
+              </p>
+            </div>
+            <div className="p-3 rounded bg-background border border-border">
+              <p className="text-sm font-semibold text-muted-foreground">
+                SAME → NEXT BUSINESS DAY
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Stable concerns deferred — doctor is NOT contacted
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Prescription Shortcut */}
         <div className="p-4 rounded-lg bg-muted/50 border">
           <h4 className="font-semibold mb-3 flex items-center gap-2">
@@ -181,7 +215,7 @@ export function OphthalmologyTriageInfo() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="destructive">YES</Badge>
-              <span className="text-destructive">→ Return to red flag screen</span>
+              <span className="text-destructive">→ Collect DOB, then return to red flag screen</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">NO</Badge>
@@ -199,7 +233,7 @@ export function OphthalmologyTriageInfo() {
           <div className="flex flex-wrap items-center gap-2">
             {intakeQuestions.map((q, i) => (
               <div key={i} className="flex items-center gap-2">
-                <Badge variant={i === 0 ? "secondary" : "outline"} className="font-normal">
+                <Badge variant={i === 0 ? "secondary" : i === 7 ? "default" : "outline"} className="font-normal">
                   {i + 1}. {q}
                 </Badge>
                 {i < intakeQuestions.length - 1 && (
@@ -258,6 +292,7 @@ export function OphthalmologyTriageInfo() {
                     <li>• Gate non-patients at start</li>
                     <li>• Collect minimal required info</li>
                     <li>• Screen for 4 red flags</li>
+                    <li>• Check symptom stability</li>
                     <li>• Route post-op patients immediately</li>
                     <li>• Generate structured summaries</li>
                   </ul>
@@ -270,6 +305,7 @@ export function OphthalmologyTriageInfo() {
                     <li>• Interpret symptoms clinically</li>
                     <li>• Make clinical decisions</li>
                     <li>• Ask unnecessary questions</li>
+                    <li>• Characterize conditions</li>
                   </ul>
                 </div>
               </div>

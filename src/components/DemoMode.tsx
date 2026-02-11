@@ -73,18 +73,20 @@ const scenarios = [
     badge: 'outline' as const,
     icon: Voicemail,
     outcome: 'This will be reviewed the next business day.',
-    outcomeDetail: 'Your message will be reviewed by the office when they open. Call back or go to the ER if symptoms worsen.',
+    outcomeDetail: 'Your message will be reviewed by the office when they open. The doctor is NOT contacted. Call back or go to the ER if symptoms worsen.',
     doctorContacted: false,
     reassurance: 'Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately.',
     steps: [
       'AI: "I\'ll collect a few details and make sure this is handled appropriately."',
-      'AI: "What symptoms are you experiencing?"',
-      'Patient: "My eyes have been dry and a little irritated"',
-      'AI: "Is this getting worse or staying the same?"',
+      'AI: "Are you having sudden vision loss?" → Patient: "No"',
+      'AI: "Flashes with curtain?" → "No" | "Severe pain?" → "No" | "Trauma?" → "No"',
+      'AI: "Briefly, what\'s going on with your eyes tonight?"',
+      'Patient: "My eyes have been dry and a little irritated for about a week"',
+      'AI: "Is this getting worse right now, or has it been about the same?"',
       'Patient: "About the same for a week"',
-      '⚪ AI classifies: NON-URGENT - stable mild symptoms',
-      'AI: "Thank you. I understand what\'s going on, and I\'ll make sure this is handled appropriately."',
-      '📝 Voicemail recorded for next business day',
+      '⚪ AI classifies: STABLE NON-URGENT — deferred to next business day',
+      '🚫 Doctor is NOT contacted or woken up',
+      '📝 Logged for next business day review',
       '✅ OUTCOME: This will be reviewed the next business day.'
     ]
   }
@@ -102,7 +104,6 @@ export function DemoMode() {
     setCurrentStep(0);
     setIsPlaying(true);
     
-    // Auto-advance through steps
     const scenario = scenarios.find(s => s.id === id);
     if (scenario) {
       scenario.steps.forEach((_, index) => {
@@ -142,7 +143,6 @@ export function DemoMode() {
       </CardHeader>
       <CardContent className="space-y-4">
         {!activeScenario ? (
-          // Scenario Selection
           <div className="grid gap-3 md:grid-cols-3">
             {scenarios.map((scenario) => (
               <button
@@ -167,9 +167,7 @@ export function DemoMode() {
             ))}
           </div>
         ) : (
-          // Active Scenario
           <div className="space-y-4">
-            {/* Scenario Header */}
             <div className={`p-4 rounded-lg border ${
               activeScenario === 'emergent' ? 'bg-destructive/5 border-destructive/20' :
               activeScenario === 'urgent' ? 'bg-warning/5 border-warning/20' : 'bg-muted/50'
@@ -185,7 +183,6 @@ export function DemoMode() {
               <p className="text-sm text-muted-foreground">{selectedScenario?.description}</p>
             </div>
 
-            {/* Steps Timeline */}
             <div className="space-y-2">
               {selectedScenario?.steps.map((step, index) => (
                 <div 
@@ -212,7 +209,6 @@ export function DemoMode() {
               ))}
             </div>
 
-            {/* Outcome - Clear Patient-Facing Message */}
             {currentStep >= (selectedScenario?.steps.length || 0) && (
               <div className={`p-4 rounded-lg border-2 ${
                 selectedScenario?.doctorContacted 
@@ -234,7 +230,6 @@ export function DemoMode() {
                 </div>
                 <p className="text-sm text-muted-foreground">{selectedScenario?.outcomeDetail}</p>
                 
-                {/* Safety Message - Always Shown */}
                 <div className="mt-3 p-3 rounded bg-warning/10 border border-warning/30">
                   <p className="text-xs font-medium text-warning">Safety Message (Always Delivered):</p>
                   <p className="text-xs text-muted-foreground mt-1 italic">
