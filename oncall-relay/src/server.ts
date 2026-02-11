@@ -118,6 +118,13 @@ wss.on('connection', (ws: WebSocket) => {
           const result = processInput(state, message.voicePrompt, null);
           state.stage = result.nextStage;
 
+          // Record the system's response in the transcript
+          state.transcript.push({
+            role: 'assistant',
+            content: result.responseText,
+            ts: new Date().toISOString(),
+          });
+
           console.log(`[${callSid}] → Response: stage=${result.nextStage}, endCall=${result.endCall}`);
           sendText(ws, result.responseText, true);
 
@@ -151,12 +158,18 @@ wss.on('connection', (ws: WebSocket) => {
             state.intake.disposition = state.intake.disposition || 'NEXT_BUSINESS_DAY';
             state.intake.dispositionReason = state.intake.dispositionReason || 'Caller pressed 0 for voicemail';
 
-            sendText(ws,
-              state.lang === 'es'
-                ? "Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima cero al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Adiós."
-                : "Unfortunately I can't record a voicemail in this mode. Please call back and press zero at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial nine one one. Goodbye.",
-              true
-            );
+            const voicemailMsg = state.lang === 'es'
+              ? "Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima cero al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Adiós."
+              : "Unfortunately I can't record a voicemail in this mode. Please call back and press zero at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial nine one one. Goodbye.";
+
+            // Record the system's response in the transcript
+            state.transcript.push({
+              role: 'assistant',
+              content: voicemailMsg,
+              ts: new Date().toISOString(),
+            });
+
+            sendText(ws, voicemailMsg, true);
             setTimeout(async () => {
               sendEnd(ws);
               if (!saved) {
@@ -169,6 +182,13 @@ wss.on('connection', (ws: WebSocket) => {
 
           const result = processInput(state, null, message.digit);
           state.stage = result.nextStage;
+
+          // Record the system's response in the transcript
+          state.transcript.push({
+            role: 'assistant',
+            content: result.responseText,
+            ts: new Date().toISOString(),
+          });
 
           sendText(ws, result.responseText, true);
 

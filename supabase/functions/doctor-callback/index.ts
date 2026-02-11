@@ -55,7 +55,7 @@ serve(async (req) => {
     console.log('Authenticated provider:', user.id);
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    const { escalationId, action } = await req.json();
+    const { escalationId, action, ackType, notes } = await req.json();
 
     if (!escalationId) {
       return new Response(
@@ -270,7 +270,6 @@ serve(async (req) => {
       }
 
       case 'resolve': {
-        const { ackType, notes } = await req.json();
         
         await supabaseAdmin
           .from('escalations')
