@@ -8,7 +8,8 @@ import {
   Calendar,
   CheckCircle,
   ChevronRight,
-  Building2
+  Building2,
+  Check
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -28,7 +29,9 @@ interface QueueItem {
 interface NextBusinessDayQueueProps {
   items: QueueItem[];
   onItemClick?: (item: QueueItem) => void;
+  onMarkResolved?: (itemId: string) => void;
   showOffice?: boolean;
+  isLoading?: boolean;
 }
 
 const typeConfig: Record<QueueItemType, {
@@ -57,7 +60,7 @@ const typeConfig: Record<QueueItemType, {
   },
 };
 
-export function NextBusinessDayQueue({ items, onItemClick, showOffice = false }: NextBusinessDayQueueProps) {
+export function NextBusinessDayQueue({ items, onItemClick, onMarkResolved, showOffice = false, isLoading = false }: NextBusinessDayQueueProps) {
   const sortedItems = [...items].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
@@ -79,7 +82,11 @@ export function NextBusinessDayQueue({ items, onItemClick, showOffice = false }:
         </div>
       </CardHeader>
       <CardContent>
-        {items.length === 0 ? (
+        {isLoading ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-muted-foreground">Loading queue...</p>
+          </div>
+        ) : items.length === 0 ? (
           <div className="py-8 text-center">
             <CheckCircle className="h-10 w-10 mx-auto text-success mb-3" />
             <p className="font-medium text-sm">Queue Clear</p>
@@ -128,9 +135,25 @@ export function NextBusinessDayQueue({ items, onItemClick, showOffice = false }:
                       )}
                     </div>
                   </div>
-                  {onItemClick && (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {onMarkResolved && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1 text-xs h-7"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMarkResolved(item.id);
+                        }}
+                      >
+                        <Check className="h-3 w-3" />
+                        Resolve
+                      </Button>
+                    )}
+                    {onItemClick && (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
                 </div>
               );
             })}

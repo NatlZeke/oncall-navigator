@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { SwapRequest, SwapStatus } from '@/types';
+import { sendSwapConfirmationSMS } from '@/hooks/useSwapConfirmation';
 
 const statusColors: Record<SwapStatus, string> = {
   requested: 'bg-blue-500/20 text-blue-700 border-blue-500/30',
@@ -34,10 +35,28 @@ const SwapRequestsPage = () => {
   const pendingRequests = swapRequests.filter(s => ['requested', 'offered', 'accepted'].includes(s.status));
   const resolvedRequests = swapRequests.filter(s => ['approved', 'rejected', 'declined', 'canceled'].includes(s.status));
 
-  const handleApprove = (request: SwapRequest) => {
-    toast.success('Swap request approved', {
-      description: `${request.requester?.full_name}'s shift has been reassigned`
-    });
+  const handleApprove = async (request: SwapRequest) => {
+    try {
+      // Send SMS confirmations to both providers
+      await sendSwapConfirmationSMS({
+        requesterName: request.requester?.full_name || 'Unknown',
+        requesterPhone: request.requester?.phone_mobile,
+        targetName: request.proposed_replacement?.full_name || 'Unknown',
+        targetPhone: request.proposed_replacement?.phone_mobile,
+        swapDate: request.shift ? format(new Date(request.shift.start_time), 'MMM d, yyyy') : 'Unknown date',
+        officeId: currentOffice.id,
+        officeName: currentOffice.name,
+      });
+
+      toast.success('Swap request approved', {
+        description: `${request.requester?.full_name}'s shift has been reassigned. SMS confirmations sent.`
+      });
+    } catch (err) {
+      console.error('Error sending swap confirmation SMS:', err);
+      toast.success('Swap request approved', {
+        description: `${request.requester?.full_name}'s shift has been reassigned (SMS notification may have failed).`
+      });
+    }
   };
 
   const handleReject = (request: SwapRequest) => {
