@@ -41,7 +41,7 @@ const OfficesPage = () => {
         console.error('Failed to load offices:', error);
         toast.error('Failed to load offices');
       } else {
-        setOffices((data as any[]) || []);
+        setOffices((data as OfficeRow[]) || []);
       }
       setLoading(false);
     };
@@ -51,7 +51,7 @@ const OfficesPage = () => {
   const handleToggleSpanish = async (office: OfficeRow, newValue: boolean) => {
     const { error } = await supabase
       .from('offices')
-      .update({ spanish_enabled: newValue } as any)
+      .update({ spanish_enabled: newValue })
       .eq('id', office.id);
 
     if (error) {
@@ -66,7 +66,7 @@ const OfficesPage = () => {
   const handleToggleCR = async (office: OfficeRow, newValue: boolean) => {
     const { error } = await supabase
       .from('offices')
-      .update({ use_conversation_relay: newValue } as any)
+      .update({ use_conversation_relay: newValue })
       .eq('id', office.id);
 
     if (error) {
@@ -85,7 +85,7 @@ const OfficesPage = () => {
   const handleCRUrlSave = async (office: OfficeRow) => {
     const { error } = await supabase
       .from('offices')
-      .update({ conversation_relay_url: office.conversation_relay_url } as any)
+      .update({ conversation_relay_url: office.conversation_relay_url })
       .eq('id', office.id);
 
     if (error) {

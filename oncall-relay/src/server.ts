@@ -74,8 +74,8 @@ wss.on('connection', (ws: WebSocket) => {
 
           if (!info) {
             console.error(`[${callSid}] Failed to get on-call info for ${calledPhone}`);
-            sendText(ws, "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial 911.", true);
-            setTimeout(() => sendEnd(ws), 500);
+            sendText(ws, "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial 911. Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el 9 1 1.", true);
+            setTimeout(() => sendEnd(ws), 4000);
             return;
           }
 
@@ -96,6 +96,7 @@ wss.on('connection', (ws: WebSocket) => {
             retryCounts: {},
             onCallProvider: info.onCallProvider,
             providerDirectory: info.providerDirectory,
+            requiresPatientDoctorConfirmation: info.requiresPatientDoctorConfirmation,
           };
 
           activeConnections.set(callSid, { ws, state });
@@ -128,7 +129,7 @@ wss.on('connection', (ws: WebSocket) => {
                 saved = true;
                 await saveCompletedIntake(state!);
               }
-            }, 500);
+            }, 4000);
           }
           break;
         }
@@ -162,7 +163,7 @@ wss.on('connection', (ws: WebSocket) => {
                 saved = true;
                 await saveCompletedIntake(state!);
               }
-            }, 500);
+            }, 4000);
             return;
           }
 
@@ -178,7 +179,7 @@ wss.on('connection', (ws: WebSocket) => {
                 saved = true;
                 await saveCompletedIntake(state!);
               }
-            }, 500);
+            }, 4000);
           }
           break;
         }
@@ -216,13 +217,13 @@ wss.on('connection', (ws: WebSocket) => {
     } catch (err) {
       console.error(`[${callSid || 'unknown'}] Error processing message:`, err);
 
-      // Send error message to caller
+      // Send bilingual error message to caller
       try {
-        sendText(ws,
-          "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial 911.",
-          true
-        );
-        setTimeout(() => sendEnd(ws), 500);
+        const errorMsg = (state?.lang === 'es')
+          ? "Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el 9 1 1. We're sorry, we're having technical difficulties. If this is an emergency, hang up and dial 911."
+          : "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial 911.";
+        sendText(ws, errorMsg, true);
+        setTimeout(() => sendEnd(ws), 4000);
       } catch {
         // WebSocket may already be closed
       }
@@ -281,3 +282,38 @@ server.listen(PORT, () => {
   console.log(`  Health check: http://localhost:${PORT}/health`);
   console.log(`  WebSocket:    ws://localhost:${PORT}/intake`);
 });
+
+// ============================================================================
+// GRACEFUL SHUTDOWN — drain connections on SIGTERM (Fly.io deploy/scale)
+// ============================================================================
+const shutdown = () => {
+  console.log('SIGTERM received — draining connections');
+
+  // Stop accepting new WebSocket connections
+  wss.close(async () => {
+    console.log('All WebSocket connections closed');
+    server.close(() => {
+      console.log('HTTP server closed — exiting');
+      process.exit(0);
+    });
+  });
+
+  // Save all active intakes before shutting down
+  for (const [sid, conn] of activeConnections) {
+    if (conn.state && !conn.state.intake.disposition) {
+      conn.state.intake.disposition = 'NEXT_BUSINESS_DAY';
+      conn.state.intake.dispositionReason = 'Server shutdown during triage';
+    }
+    // saveCompletedIntake runs in the WebSocket close handler
+    conn.ws.close();
+  }
+
+  // Force exit after 10 seconds if draining stalls
+  setTimeout(() => {
+    console.error('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10_000);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

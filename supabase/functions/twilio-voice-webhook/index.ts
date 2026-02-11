@@ -1569,8 +1569,8 @@ function generateConversationRelayTwiml(
   spanishEnabled: boolean
 ): string {
   const welcomeGreeting = spanishEnabled
-    ? `Thank you for calling ${escapeXml(officeName)} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Gracias por llamar al servicio fuera de horario de ${escapeXml(officeName)}. Si esto es una emergencia, cuelgue y marque el 9 1 1. For English, say English. Para español, diga español.`
-    : `Thank you for calling ${escapeXml(officeName)} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Are you an established patient with ${escapeXml(officeName)}?`;
+    ? `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Gracias por llamar al servicio fuera de horario de ${officeName}. Si esto es una emergencia, cuelgue y marque el 9 1 1. For English, say English. Para español, diga español.`
+    : `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial 9 1 1. Are you an established patient with ${officeName}?`;
 
   const hints = 'yes, no, established patient, floaters, flashes, vision loss, drops, refill, prescription, voicemail, surgery, pain, trauma, chemical, worse, same, stable';
 

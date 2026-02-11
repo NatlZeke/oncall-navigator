@@ -16,6 +16,7 @@ export async function getOnCallInfo(calledPhone: string): Promise<{
   spanishEnabled: boolean;
   onCallProvider: { name: string; phone: string };
   providerDirectory: Record<string, { name: string; phone: string }>;
+  requiresPatientDoctorConfirmation: boolean;
 } | null> {
   try {
     // Look up office by phone number
@@ -51,6 +52,18 @@ export async function getOnCallInfo(calledPhone: string): Promise<{
         }
       : { name: 'On-Call Provider', phone: '+15125551001' };
 
+    // Check routing type — only ask for patient's doctor when routing is 'own_patients_only'
+    let requiresPatientDoctorConfirmation = false;
+    if (assignment?.provider_user_id) {
+      const { data: routingConfig } = await supabase
+        .from('provider_routing_config')
+        .select('routing_type')
+        .eq('provider_user_id', assignment.provider_user_id)
+        .eq('is_active', true)
+        .single();
+      requiresPatientDoctorConfirmation = routingConfig?.routing_type === 'own_patients_only';
+    }
+
     // Look up provider routing config for provider directory
     const { data: configs } = await supabase
       .from('provider_routing_config')
@@ -78,6 +91,7 @@ export async function getOnCallInfo(calledPhone: string): Promise<{
       spanishEnabled: office.spanish_enabled ?? false,
       onCallProvider,
       providerDirectory,
+      requiresPatientDoctorConfirmation,
     };
   } catch (err) {
     console.error('Failed to get on-call info:', err);
@@ -98,6 +112,7 @@ export async function saveCompletedIntake(state: TriageState): Promise<void> {
       officeId: state.officeId,
       officeName: state.officeName,
       lang: state.lang,
+      serviceLine: 'General Ophthalmology', // Default for Hill Country Eye Center
       intake: {
         patientName: state.intake.patientName,
         dateOfBirth: state.intake.dateOfBirth,
