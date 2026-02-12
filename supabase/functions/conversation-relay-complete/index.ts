@@ -32,6 +32,8 @@ interface RelayCompletePayload {
     isPrescriptionRequest?: boolean;
     medicationRequested?: string;
     patientDoctor?: string;
+    matchedProviderName?: string;
+    matchedProviderPhone?: string;
     symptoms: string[];
     primaryComplaint?: string;
     disposition: 'ER_NOW' | 'URGENT_CALLBACK' | 'NEXT_BUSINESS_DAY';
@@ -234,7 +236,7 @@ serve(async (req) => {
     let escalationId: string | null = null;
 
     if (disposition === 'ER_NOW' || disposition === 'URGENT_CALLBACK') {
-      // Look up on-call provider
+      // Look up on-call provider (default fallback)
       const today = new Date().toISOString().split('T')[0];
       const { data: assignment } = await supabase
         .from('oncall_assignments')
@@ -244,14 +246,41 @@ serve(async (req) => {
         .eq('status', 'active')
         .single();
 
-      const provider = assignment
+      const defaultProvider = assignment
         ? {
             name: assignment.provider_name,
             phone: assignment.provider_phone.replace(/[^\d+]/g, '').startsWith('+')
               ? assignment.provider_phone.replace(/[^\d+]/g, '')
-              : '+1' + assignment.provider_phone.replace(/\D/g, '')
+              : '+1' + assignment.provider_phone.replace(/\D/g, ''),
+            userId: assignment.provider_user_id,
           }
-        : { name: 'On-Call Provider', phone: '+15125551001' };
+        : { name: 'On-Call Provider', phone: '+15125551001', userId: null };
+
+      // Use patient's matched doctor if available, otherwise fall back to on-call provider
+      let provider = { name: defaultProvider.name, phone: defaultProvider.phone };
+      let providerUserId = defaultProvider.userId;
+
+      if (intake.matchedProviderName && intake.matchedProviderPhone) {
+        const matchedPhone = intake.matchedProviderPhone.replace(/[^\d+]/g, '').startsWith('+')
+          ? intake.matchedProviderPhone.replace(/[^\d+]/g, '')
+          : '+1' + intake.matchedProviderPhone.replace(/\D/g, '');
+        provider = { name: intake.matchedProviderName, phone: matchedPhone };
+
+        // Look up the matched provider's user_id from routing config
+        const { data: routingMatch } = await supabase
+          .from('provider_routing_config')
+          .select('provider_user_id')
+          .eq('office_id', officeId)
+          .eq('provider_name', intake.matchedProviderName)
+          .eq('is_active', true)
+          .limit(1)
+          .single();
+
+        providerUserId = routingMatch?.provider_user_id || defaultProvider.userId;
+        console.log(`[${callSid}] Routing to patient's doctor: ${provider.name} (matched from intake)`);
+      } else {
+        console.log(`[${callSid}] Routing to default on-call: ${provider.name}`);
+      }
 
       // Create escalation record
       const { data: escalationRecord, error: escError } = await supabase
@@ -284,7 +313,7 @@ serve(async (req) => {
           },
           assigned_provider_name: provider.name,
           assigned_provider_phone: provider.phone,
-          assigned_provider_user_id: assignment?.provider_user_id || null,
+          assigned_provider_user_id: providerUserId || null,
           current_tier: 1,
           status: 'pending',
           sla_target_minutes: disposition === 'ER_NOW' ? 15 : 30,
