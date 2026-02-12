@@ -328,9 +328,10 @@ export function processInput(
     case 'ask_patient_doctor': {
       if (!input && !digit) {
         return handleRetry(state, 'ask_patient_doctor',
-          t(state.lang, "Who is your doctor at our office?", "¿Quién es su doctor en nuestra oficina?"),
+          t(state.lang, "Which doctor do you see at our office?", "¿Con qué doctor se atiende en nuestra oficina?"),
           () => {
-            // Default to on-call provider
+            // Default to on-call provider (no match)
+            state.transcript.push({ role: 'system', content: 'Doctor selection skipped — using default on-call provider', ts });
             return {
               responseText: askPostOpText(state),
               nextStage: 'ask_postop' as const,
@@ -339,17 +340,28 @@ export function processInput(
           }
         );
       }
-      // Try to match to a provider in the directory
+
       if (input) {
         const doctorResponse = input.toLowerCase();
         state.intake.patientDoctor = input;
-        for (const [keyword] of Object.entries(state.providerDirectory)) {
+
+        // Try to match spoken name against provider directory keywords
+        let matched = false;
+        for (const [keyword, provider] of Object.entries(state.providerDirectory)) {
           if (doctorResponse.includes(keyword)) {
-            // Matched — but routing happens at completion, not here
+            state.intake.matchedProviderName = provider.name;
+            state.intake.matchedProviderPhone = provider.phone;
+            state.transcript.push({ role: 'system', content: `Doctor matched: ${provider.name} (keyword: "${keyword}")`, ts });
+            matched = true;
             break;
           }
         }
+
+        if (!matched) {
+          state.transcript.push({ role: 'system', content: `No provider match for: "${input}" — using default on-call provider`, ts });
+        }
       }
+
       return {
         responseText: askPostOpText(state),
         nextStage: 'ask_postop',
@@ -798,14 +810,24 @@ function askCallback(state: TriageState): TriageResult {
 }
 
 function transitionAfterCallback(state: TriageState): TriageResult {
-  // Only ask for patient's doctor when routing is 'own_patients_only'
-  if (state.requiresPatientDoctorConfirmation) {
+  // Always ask which doctor the patient sees — used for provider routing
+  if (Object.keys(state.providerDirectory).length > 0) {
+    // Build a list of unique provider names for the prompt
+    const uniqueNames = [...new Set(Object.values(state.providerDirectory).map(p => p.name))];
+    const nameList = uniqueNames.length <= 4
+      ? uniqueNames.join(', ')
+      : uniqueNames.slice(0, 4).join(', ');
+
     return {
-      responseText: t(state.lang, "Who is your doctor at our office?", "¿Quién es su doctor en nuestra oficina?"),
+      responseText: t(state.lang,
+        `Which doctor do you see at ${state.officeName}? For example, ${nameList}.`,
+        `¿Con qué doctor se atiende en ${state.officeName}? Por ejemplo, ${nameList}.`
+      ),
       nextStage: 'ask_patient_doctor',
       endCall: false,
     };
   }
+  // No providers configured — skip doctor selection
   return {
     responseText: askPostOpText(state),
     nextStage: 'ask_postop',

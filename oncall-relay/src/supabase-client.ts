@@ -128,6 +128,8 @@ export async function saveCompletedIntake(state: TriageState): Promise<void> {
         isPrescriptionRequest: state.intake.isPrescriptionRequest,
         medicationRequested: state.intake.medicationRequested,
         patientDoctor: state.intake.patientDoctor,
+        matchedProviderName: state.intake.matchedProviderName,
+        matchedProviderPhone: state.intake.matchedProviderPhone,
         symptoms: state.intake.symptoms,
         primaryComplaint: state.intake.primaryComplaint,
         disposition: state.intake.disposition || 'NEXT_BUSINESS_DAY',

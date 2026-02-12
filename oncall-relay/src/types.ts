@@ -28,6 +28,8 @@ export interface IntakeData {
   medicationRequested?: string;
   safetyCheckCompleted?: boolean;
   patientDoctor?: string;
+  matchedProviderName?: string;
+  matchedProviderPhone?: string;
   symptoms: string[];
   primaryComplaint?: string;
   disposition?: Disposition;
