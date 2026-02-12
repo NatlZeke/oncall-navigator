@@ -342,6 +342,24 @@ serve(async (req) => {
       }
       
       if (body.action === 'initiate' && body.escalation_id) {
+        // Validate override_callback_number if provided
+        if (body.override_callback_number) {
+          if (typeof body.override_callback_number !== 'string' || !/^\+[1-9]\d{1,14}$/.test(body.override_callback_number)) {
+            return new Response(JSON.stringify({ error: 'Invalid phone format for override_callback_number. Use E.164 format (e.g. +15551234567).' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
+        // Validate escalation_id is UUID format
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.escalation_id)) {
+          return new Response(JSON.stringify({ error: 'Invalid escalation_id format' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         // Verify authorization
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {

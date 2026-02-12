@@ -169,6 +169,29 @@ serve(async (req) => {
       });
     }
 
+    // Validate disposition enum
+    const validDispositions: Disposition[] = ['ER_NOW', 'URGENT_CALLBACK', 'NEXT_BUSINESS_DAY'];
+    if (!validDispositions.includes(intake.disposition)) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid disposition value. Must be ER_NOW, URGENT_CALLBACK, or NEXT_BUSINESS_DAY.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Validate and sanitize string fields
+    if (intake.callbackNumber && !/^\+?[0-9]{7,15}$/.test(intake.callbackNumber.replace(/[\s\-()]/g, ''))) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid callback number format' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Enforce string length limits on user-provided fields
+    if (intake.patientName && intake.patientName.length > 200) intake.patientName = intake.patientName.substring(0, 200);
+    if (intake.primaryComplaint && intake.primaryComplaint.length > 500) intake.primaryComplaint = intake.primaryComplaint.substring(0, 500);
+    if (intake.dateOfBirth && intake.dateOfBirth.length > 20) intake.dateOfBirth = intake.dateOfBirth.substring(0, 20);
+    if (intake.medicationRequested && intake.medicationRequested.length > 200) intake.medicationRequested = intake.medicationRequested.substring(0, 200);
+    if (intake.patientDoctor && intake.patientDoctor.length > 200) intake.patientDoctor = intake.patientDoctor.substring(0, 200);
+    if (intake.dispositionReason && intake.dispositionReason.length > 500) intake.dispositionReason = intake.dispositionReason.substring(0, 500);
+
     console.log(`ConversationRelay complete: ${callSid} | ${officeId} | ${intake.disposition}`);
 
     // 1. Update the twilio_conversations record
