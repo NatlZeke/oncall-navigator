@@ -21,8 +21,8 @@ const corsHeaders = {
 // To change voices: browse the Twilio voice picker linked above, copy a voice ID,
 // and replace the ID portion below (everything before the first hyphen).
 
-const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-flash_v2_5-0.95_0.75_0.75';  // Sarah — warm, calm American female
-const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-flash_v2_5-0.95_0.75_0.75';  // Charlotte — multilingual, warm female
+const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-eleven_multilingual_v2-0.95_0.75_0.75';  // Sarah — warm, calm American female (high-quality multilingual model)
+const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-eleven_multilingual_v2-0.95_0.75_0.75';  // Charlotte — multilingual, warm female (high-quality multilingual model)
 
 // Polly voices remain for <Say>/<Gather> path (ElevenLabs not available for <Say>)
 const POLLY_VOICE_EN = 'Polly.Joanna-Neural';
