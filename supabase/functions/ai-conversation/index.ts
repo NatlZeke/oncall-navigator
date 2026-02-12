@@ -81,6 +81,19 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { conversationId, message, context } = await req.json();
     const sanitizedMessage = sanitizeUserInput(message);
+
+    // Validate conversationId if provided (must be UUID)
+    if (conversationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)) {
+      return new Response(JSON.stringify({ error: 'Invalid conversationId format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Sanitize context object
+    if (context && typeof context === 'object') {
+      if (context.officeName && typeof context.officeName === 'string') {
+        context.officeName = context.officeName.substring(0, 100).replace(/[<>"'&]/g, '');
+      }
+    }
     
     if (!sanitizedMessage) {
       return new Response(JSON.stringify({ error: 'Message is required' }),

@@ -1058,6 +1058,7 @@ export type Database = {
           min_calls_for_alert: number
           notify_email: string[] | null
           notify_phone: string[] | null
+          office_id: string | null
           updated_at: string
           webhook_name: string
         }
@@ -1071,6 +1072,7 @@ export type Database = {
           min_calls_for_alert?: number
           notify_email?: string[] | null
           notify_phone?: string[] | null
+          office_id?: string | null
           updated_at?: string
           webhook_name: string
         }
@@ -1084,6 +1086,7 @@ export type Database = {
           min_calls_for_alert?: number
           notify_email?: string[] | null
           notify_phone?: string[] | null
+          office_id?: string | null
           updated_at?: string
           webhook_name?: string
         }
