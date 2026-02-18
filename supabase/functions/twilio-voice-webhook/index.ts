@@ -261,6 +261,7 @@ interface IntakeData {
   hasTraumaChemical?: boolean;
   isWorsening?: boolean;
   stabilityResponse?: string;
+  symptomOnset?: string;
   isPrescriptionRequest?: boolean;
   medicationRequested?: string;
   safetyCheckCompleted?: boolean;
@@ -286,6 +287,7 @@ interface PreCallSummary {
   officeName: string;
   serviceLine: string;
   stabilityAssessment?: string;
+  symptomOnset?: string;
   patientLanguage?: string;
 }
 
@@ -777,7 +779,7 @@ serve(async (req) => {
           transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
           
           const complaintLower = speechResult.toLowerCase();
-          const hasRedFlagKeywords = /\b(vision loss|can't see|blind|curtain|shadow|chemical|splash|trauma|hit|punch|no puedo ver|ciego|cortina|sombra|químico|golpe)\b/i.test(complaintLower);
+          const hasRedFlagKeywords = /\b(vision loss|can't see|blind|curtain|shadow|chemical|splash|trauma|hit|punch|pus|discharge|oozing|swelling|swollen|redness.{0,10}worse|fever|no puedo ver|ciego|cortina|sombra|químico|golpe|pus|secreción|supurando|hinchazón|hinchado|enrojecimiento|fiebre)\b/i.test(complaintLower);
           
           if (hasRedFlagKeywords) {
             intakeData.disposition = 'ER_NOW';
@@ -787,8 +789,8 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Post-operative patient concern';
           }
           
-          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+      twimlResponse = generateConfirmDetailsQuestion(intakeData, callerPhone, supabaseUrl, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'confirm_details', intake_data: intakeData });
         } else {
           const retries = getRetryCount(metadata, 'postop_complaint');
           if (retries >= MAX_RETRIES) {
@@ -945,8 +947,8 @@ serve(async (req) => {
             twimlResponse = generatePrescriptionMedicationQuestion(supabaseUrl, lang);
             await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_medication', intake_data: intakeData });
           } else {
-            twimlResponse = generateStabilityQuestion(supabaseUrl, lang);
-            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'stability_check', intake_data: intakeData });
+            twimlResponse = generateAskOnsetQuestion(supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_onset', intake_data: intakeData });
           }
         } else {
           const retries = getRetryCount(metadata, 'brief_complaint');
@@ -959,6 +961,29 @@ serve(async (req) => {
           } else {
             const updatedMeta = incrementRetry(metadata, 'brief_complaint');
             twimlResponse = generateBriefComplaintQuestion(supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
+        }
+        break;
+
+      // ============================================================================
+      // STEP 5B: SYMPTOM ONSET
+      // ============================================================================
+      case 'ask_onset':
+        if (speechResult || digits) {
+          intakeData.symptomOnset = speechResult || `pressed ${digits}`;
+          transcript.push({ role: 'caller', content: speechResult || `pressed ${digits}`, timestamp: new Date().toISOString() });
+          twimlResponse = generateStabilityQuestion(supabaseUrl, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'stability_check', intake_data: intakeData });
+        } else {
+          const retries = getRetryCount(metadata, 'ask_onset');
+          if (retries >= MAX_RETRIES) {
+            intakeData.symptomOnset = 'Not provided';
+            twimlResponse = generateStabilityQuestion(supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'stability_check', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'ask_onset');
+            twimlResponse = generateAskOnsetQuestion(supabaseUrl, lang);
             await updateConversation(supabase, callSid, transcript, updatedMeta);
           }
         }
@@ -982,8 +1007,8 @@ serve(async (req) => {
             intakeData.dispositionReason = 'Stable condition - next business day follow-up';
           }
           
-          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
-          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+          twimlResponse = generateConfirmDetailsQuestion(intakeData, callerPhone, supabaseUrl, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'confirm_details', intake_data: intakeData });
         } else {
           const retries = getRetryCount(metadata, 'stability_check');
           if (retries >= MAX_RETRIES) {
@@ -997,6 +1022,52 @@ serve(async (req) => {
             twimlResponse = generateStabilityQuestion(supabaseUrl, lang);
             await updateConversation(supabase, callSid, transcript, updatedMeta);
           }
+        }
+        break;
+
+      // ============================================================================
+      // CONFIRM DETAILS (read-back before disposition)
+      // ============================================================================
+      case 'confirm_details':
+        if (speechResult || digits) {
+          transcript.push({ role: 'caller', content: speechResult || `pressed ${digits}`, timestamp: new Date().toISOString() });
+          
+          if (isAffirmative(speechResult || '') || digits === '1') {
+            twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+          } else {
+            twimlResponse = generateCorrectDetailsQuestion(supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'correct_details', intake_data: intakeData });
+          }
+        } else {
+          // No response — just proceed to disposition
+          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+        }
+        break;
+
+      // ============================================================================
+      // CORRECT DETAILS
+      // ============================================================================
+      case 'correct_details':
+        if (speechResult) {
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+          
+          const hasDigitsInCorrection = /\d{3,}/.test(speechResult);
+          if (hasDigitsInCorrection) {
+            intakeData.callbackNumber = speechResult;
+            transcript.push({ role: 'system', content: `Callback number corrected to: ${speechResult}`, timestamp: new Date().toISOString() });
+          } else {
+            intakeData.patientName = speechResult;
+            transcript.push({ role: 'system', content: `Patient name corrected to: ${speechResult}`, timestamp: new Date().toISOString() });
+          }
+          
+          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
+        } else {
+          // Can't capture correction — proceed
+          twimlResponse = await handleDisposition(supabase, intakeData, onCallInfo, callerPhone, calledPhone, callSid, resolvedOfficeId, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'complete', intake_data: intakeData });
         }
         break;
 
@@ -1255,6 +1326,7 @@ async function handleDisposition(
     officeName: onCallInfo.officeName,
     serviceLine: onCallInfo.serviceLine,
     stabilityAssessment,
+    symptomOnset: intakeData.symptomOnset,
     patientLanguage: lang === 'es' ? 'Spanish' : 'English',
   };
 
@@ -1276,6 +1348,10 @@ async function handleDisposition(
       if (escalationResult?.id) {
         await updateEscalationWithSMS(supabase, escalationResult.id, smsResult);
       }
+
+      // Send patient confirmation SMS
+      await sendPatientConfirmationSMS(supabase, summary.callbackNumber, targetProvider.name, escalationResult?.id, officeId, lang);
+
       return generateUrgentCallbackScript(lang);
     }
       
@@ -1309,7 +1385,7 @@ async function createEscalationRecord(
       has_recent_surgery: intakeData.hasRecentSurgery,
       primary_complaint: intakeData.primaryComplaint,
       symptoms: intakeData.symptoms,
-      structured_summary: { ...summary, disposition, dispositionReason: intakeData.dispositionReason, patientLanguage: lang === 'es' ? 'Spanish' : 'English' },
+      structured_summary: { ...summary, disposition, dispositionReason: intakeData.dispositionReason, patientLanguage: lang === 'es' ? 'Spanish' : 'English', symptomOnset: intakeData.symptomOnset },
       assigned_provider_name: provider.name,
       assigned_provider_phone: provider.phone,
       current_tier: 1,
@@ -1598,6 +1674,63 @@ async function sendPreCallSMS(
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     console.error('Error sending pre-call SMS:', err);
     return { success: false, smsBody: smsResult.body, templateUsed: smsResult.templateUsed };
+  }
+}
+
+// ============================================================================
+// PATIENT CONFIRMATION SMS — sent to patient after URGENT_CALLBACK escalation
+// ============================================================================
+async function sendPatientConfirmationSMS(
+  supabase: any,
+  callbackNumber: string,
+  providerName: string,
+  escalationId: string | undefined,
+  officeId: string,
+  lang: Lang = 'en'
+): Promise<void> {
+  const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuth = Deno.env.get('TWILIO_AUTH_TOKEN');
+  const twilioPhone = Deno.env.get('TWILIO_PHONE_NUMBER');
+
+  if (!twilioSid || !twilioAuth || !twilioPhone || !callbackNumber) return;
+
+  const patientSmsBody = lang === 'es'
+    ? `Su mensaje ha sido enviado al ${providerName}. Le devolverán la llamada pronto al ${formatPhoneForDisplay(callbackNumber)}. Si sus síntomas empeoran, vaya a la sala de emergencias más cercana o llame al 911.`
+    : `Your message has been sent to ${providerName}. They'll call you back shortly at ${formatPhoneForDisplay(callbackNumber)}. If your symptoms worsen, please head to the nearest ER or call 911.`;
+
+  try {
+    const toNumber = callbackNumber.startsWith('+') ? callbackNumber : '+1' + callbackNumber.replace(/\D/g, '');
+    const result = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${twilioSid}:${twilioAuth}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ To: toNumber, From: twilioPhone, Body: patientSmsBody }),
+      }
+    );
+
+    const smsResponse = await result.json();
+
+    await supabase.from('notification_logs').insert({
+      notification_type: 'patient_confirmation_sms',
+      recipient_phone: callbackNumber,
+      office_id: officeId,
+      content: { sms_body: patientSmsBody, escalation_id: escalationId },
+      status: result.ok ? 'sent' : 'failed',
+      twilio_sid: smsResponse?.sid,
+      metadata: { workflow: 'patient_confirmation', escalation_id: escalationId, transport: 'say_gather' }
+    });
+
+    if (result.ok) {
+      console.log(`Patient confirmation SMS sent to ${callbackNumber}:`, smsResponse.sid);
+    } else {
+      console.error('Failed to send patient confirmation SMS:', smsResponse);
+    }
+  } catch (err) {
+    console.error('Error sending patient confirmation SMS:', err);
   }
 }
 
@@ -2119,6 +2252,55 @@ function generateBriefComplaintQuestion(baseUrl: string, lang: Lang = 'en'): str
   <Say voice="${v}">${intro}</Say>
   <Gather input="speech" timeout="10" speechTimeout="4" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
     <Say voice="${v}">${prompt}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateAskOnsetQuestion(baseUrl: string, lang: Lang = 'en'): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const msg = lang === 'es'
+    ? 'Gracias. ¿Y cuándo comenzó esto? Por ejemplo, hoy, ayer, o hace unos días.'
+    : 'Thanks for that. And when did this start? For example, today, yesterday, or a few days ago.';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="today, yesterday, few days, last week, hoy, ayer, hace días"${gl}>
+    <Say voice="${v}">${msg}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateConfirmDetailsQuestion(intakeData: IntakeData, callerPhone: string, baseUrl: string, lang: Lang = 'en'): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const hints = hintsYesNo(lang);
+  const name = intakeData.patientName || (lang === 'es' ? 'su nombre' : 'your name');
+  const callback = intakeData.callbackNumber || callerPhone || '';
+  const callbackDisplay = formatPhoneDigitByDigit(callback);
+  const msg = lang === 'es'
+    ? `Solo para confirmar que tengo todo correcto — su nombre es ${escapeXml(name)}, y le contactaremos al ${escapeXml(callbackDisplay)}. ¿Es correcto?`
+    : `Just to make sure I have everything right — your name is ${escapeXml(name)}, and we'll reach you at ${escapeXml(callbackDisplay)}. Is that correct?`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
+    <Say voice="${v}">${msg}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateCorrectDetailsQuestion(baseUrl: string, lang: Lang = 'en'): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const msg = lang === 'es'
+    ? 'No hay problema. ¿Qué necesita corregir — su nombre, o el número de contacto?'
+    : "No problem. What needs to be corrected — your name, or the callback number?";
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="10" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${msg}</Say>
   </Gather>
   <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
 </Response>`;
