@@ -74,7 +74,7 @@ wss.on('connection', (ws: WebSocket) => {
 
           if (!info) {
             console.error(`[${callSid}] Failed to get on-call info for ${calledPhone}`);
-            sendText(ws, "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial nine one one. Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el nueve uno uno.", true);
+            sendText(ws, "I'm sorry, we're having technical difficulties right now. If this is an emergency, please hang up and dial nine one one. Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el nueve uno uno.", true);
             setTimeout(() => sendEnd(ws), 4000);
             return;
           }
@@ -159,8 +159,8 @@ wss.on('connection', (ws: WebSocket) => {
             state.intake.dispositionReason = state.intake.dispositionReason || 'Caller pressed 0 for voicemail';
 
             const voicemailMsg = state.lang === 'es'
-              ? "Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima cero al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Adiós."
-              : "Unfortunately I can't record a voicemail in this mode. Please call back and press zero at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial nine one one. Goodbye.";
+              ? "Desafortunadamente, no puedo grabar un mensaje de voz en este modo. Si llama de nuevo y presiona cero al inicio, podrá dejar uno. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Cuídese."
+              : "Unfortunately, I can't record a voicemail in this mode. If you call back and press zero right away, you'll be able to leave one. If this is an emergency, please hang up and dial nine one one. Take care.";
 
             // Record the system's response in the transcript
             state.transcript.push({
@@ -240,8 +240,8 @@ wss.on('connection', (ws: WebSocket) => {
       // Send bilingual error message to caller
       try {
         const errorMsg = (state?.lang === 'es')
-          ? "Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el nueve uno uno. We're sorry, we're having technical difficulties. If this is an emergency, hang up and dial nine one one."
-          : "I'm sorry, we're having technical difficulties. If this is an emergency, hang up and dial nine one one.";
+          ? "Lo sentimos, estamos teniendo dificultades técnicas. Si esto es una emergencia, cuelgue y marque el nueve uno uno. We're sorry, we're having some technical difficulties. If this is an emergency, please hang up and dial nine one one."
+          : "I'm sorry, we're having some technical difficulties. If this is an emergency, please hang up and dial nine one one.";
         sendText(ws, errorMsg, true);
         setTimeout(() => sendEnd(ws), 4000);
       } catch {

@@ -21,8 +21,8 @@ const corsHeaders = {
 // To change voices: browse the Twilio voice picker linked above, copy a voice ID,
 // and replace the ID portion below (everything before the first hyphen).
 
-const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-eleven_multilingual_v2-0.95_0.75_0.75';  // Sarah — warm, calm American female (high-quality multilingual model)
-const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-eleven_multilingual_v2-0.95_0.75_0.75';  // Charlotte — multilingual, warm female (high-quality multilingual model)
+const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-eleven_multilingual_v2-0.92_0.65_0.70';  // Sarah — warm, calm American female (natural tuning)
+const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-eleven_multilingual_v2-0.92_0.65_0.70';  // Charlotte — multilingual, warm female (natural tuning)
 
 // Polly voices remain for <Say>/<Gather> path (ElevenLabs not available for <Say>)
 const POLLY_VOICE_EN = 'Polly.Joanna-Neural';
@@ -1590,8 +1590,8 @@ function generateConversationRelayTwiml(
   spanishEnabled: boolean
 ): string {
   const welcomeGreeting = spanishEnabled
-    ? `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial nine one one. Gracias por llamar al servicio fuera de horario de ${officeName}. Si esto es una emergencia, cuelgue y marque el nueve uno uno. For English, say English. Para español, diga español.`
-    : `Thank you for calling ${officeName} after hours answering service. If this is an emergency, hang up and dial nine one one. Are you an established patient with ${officeName}?`;
+    ? `Hi, thanks for calling ${officeName} after hours. If this is an emergency, please hang up and dial nine one one. Gracias por llamar a ${officeName} fuera de horario. Si esto es una emergencia, cuelgue y marque el nueve uno uno. For English, just say English. Para español, diga español.`
+    : `Hi, thanks for calling ${officeName} after hours. If this is an emergency, please hang up and dial nine one one. Are you an established patient with ${officeName}?`;
 
   // Expanded hints for ophthalmology triage — improves Deepgram STT accuracy
   const hints = [
@@ -1938,7 +1938,7 @@ function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { na
   }
   hintsList.push(lang === 'es' ? "no sé" : "don't know");
   const hints = hintsList.join(', ');
-  const msg = lang === 'es' ? '¿Quién es su doctor en nuestra oficina?' : 'Who is your doctor at our office?';
+  const msg = lang === 'es' ? '¿Y quién es su doctor en nuestra oficina?' : "And who's your doctor at our office?";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
@@ -1957,8 +1957,8 @@ function generatePostOpQuestionWithTransition(patientName: string | undefined, b
     ? (patientName && patientName !== 'Not provided' ? `Gracias, ${escapeXml(patientName)}.` : 'Gracias.')
     : (patientName && patientName !== 'Not provided' ? `Thank you, ${escapeXml(patientName)}.` : 'Thank you.');
   const [safety, surgery, dtmf] = lang === 'es'
-    ? ['Ahora necesito hacerle unas preguntas rápidas de seguridad.', '¿Ha tenido cirugía de ojos en los últimos 14 días?', 'Oprima 1 para sí, 2 para no.']
-    : ['Now I need to ask a few quick safety questions.', 'Have you had eye surgery in the last 14 days?', 'Press 1 for yes, 2 for no.'];
+    ? ['Solo necesito hacerle unas preguntas rápidas de seguridad.', '¿Ha tenido alguna cirugía de ojos en las últimas dos semanas?', 'Oprima 1 para sí, 2 para no.']
+    : ['I just need to ask a few quick safety questions.', 'Have you had any eye surgery in the last two weeks?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${nameGreeting} ${safety}</Say>
@@ -1974,7 +1974,7 @@ function generatePostOpQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const [q, dtmf] = lang === 'es' ? ['¿Ha tenido cirugía de ojos en los últimos 14 días?', 'Oprima 1 para sí, 2 para no.'] : ['Have you had eye surgery in the last 14 days?', 'Press 1 for yes, 2 for no.'];
+  const [q, dtmf] = lang === 'es' ? ['¿Ha tenido alguna cirugía de ojos en las últimas dos semanas?', 'Oprima 1 para sí, 2 para no.'] : ['Have you had any eye surgery in the last two weeks?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
@@ -1989,8 +1989,8 @@ function generatePostOpComplaintQuestion(baseUrl: string, lang: Lang = 'en'): st
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const [intro, prompt] = lang === 'es'
-    ? ['Entendido. ¿Puede decirme brevemente qué le pasa?', 'Por favor describa lo que está experimentando.']
-    : ['Got it. Can you briefly tell me what\'s going on?', 'Please describe what you\'re experiencing.'];
+    ? ['Entendido. ¿Puede decirme brevemente qué le está pasando?', 'Solo describa lo que está sintiendo.']
+    : ['Okay, got it. Can you tell me briefly what\'s going on?', 'Just describe what you\'re experiencing.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
@@ -2009,8 +2009,8 @@ function generateRedFlag1_VisionLoss(baseUrl: string, lang: Lang = 'en'): string
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
   const [q, dtmf] = lang === 'es'
-    ? ['¿Tiene pérdida repentina de visión o un cambio importante y repentino en su visión?', 'Oprima 1 para sí, 2 para no.']
-    : ['Are you having sudden vision loss or a major sudden change in vision?', 'Press 1 for yes, 2 for no.'];
+    ? ['¿Está teniendo alguna pérdida repentina de visión, o un cambio grande y repentino en su visión?', 'Oprima 1 para sí, 2 para no.']
+    : ['Are you having any sudden vision loss, or a big sudden change in your vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
@@ -2026,8 +2026,8 @@ function generateRedFlag2_FlashesCurtain(baseUrl: string, lang: Lang = 'en'): st
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
   const [q, dtmf] = lang === 'es'
-    ? ['¿Ve destellos o puntos flotantes nuevos junto con una cortina o sombra en su visión?', 'Oprima 1 para sí, 2 para no.']
-    : ['Do you see new flashes or floaters together with a curtain or shadow in your vision?', 'Press 1 for yes, 2 for no.'];
+    ? ['Bien, siguiente pregunta. ¿Está viendo destellos o puntos flotantes nuevos, especialmente con una cortina o sombra en su visión?', 'Oprima 1 para sí, 2 para no.']
+    : ['Okay, next question. Are you seeing any new flashes or floaters, especially with a curtain or shadow across your vision?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="7" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
@@ -2042,7 +2042,7 @@ function generateRedFlag3_SeverePain(baseUrl: string, lang: Lang = 'en'): string
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const [q, dtmf] = lang === 'es' ? ['¿Tiene dolor severo en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.'] : ['Are you having severe eye pain right now?', 'Press 1 for yes, 2 for no.'];
+  const [q, dtmf] = lang === 'es' ? ['¿Tiene algún dolor severo en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.'] : ['Are you having any severe eye pain right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
@@ -2057,7 +2057,7 @@ function generateRedFlag4_TraumaChemical(baseUrl: string, lang: Lang = 'en'): st
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
-  const [q, dtmf] = lang === 'es' ? ['¿Hubo algún trauma en su ojo o exposición a químicos?', 'Oprima 1 para sí, 2 para no.'] : ['Was there any trauma to your eye or any chemical exposure?', 'Press 1 for yes, 2 for no.'];
+  const [q, dtmf] = lang === 'es' ? ['¿Y ha tenido alguna lesión en el ojo, o algún tipo de contacto con químicos?', 'Oprima 1 para sí, 2 para no.'] : ["And has there been any injury to your eye, or any kind of chemical splash or exposure?", 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
@@ -2072,8 +2072,8 @@ function generateBriefComplaintQuestion(baseUrl: string, lang: Lang = 'en'): str
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const [intro, prompt] = lang === 'es'
-    ? ['Bien. Ahora, con sus propias palabras, ¿qué le pasa con sus ojos esta noche?', 'Por favor describa brevemente su preocupación.']
-    : ['Good. Now, in your own words, what\'s going on with your eyes tonight?', 'Please briefly describe your concern.'];
+    ? ['Bien. Con sus propias palabras, ¿qué le está pasando con sus ojos esta noche?', 'Solo déme una breve descripción.']
+    : ['Good. So in your own words, what\'s going on with your eyes tonight?', 'Just give me a brief description.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
@@ -2088,8 +2088,8 @@ function generateStabilityQuestion(baseUrl: string, lang: Lang = 'en'): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const [q, dtmf, hintAttr] = lang === 'es'
-    ? ['¿Esto está empeorando ahora mismo, o ha estado más o menos igual?', 'Oprima 1 si está empeorando, o 2 si ha estado más o menos igual.', 'peor, empeorando, igual, estable']
-    : ['Is this getting worse right now, or has it been about the same?', 'Press 1 if it\'s getting worse, or 2 if it\'s been about the same.', 'worse, getting worse, about the same, same, stable, few days'];
+    ? ['Gracias. ¿Esto está empeorando ahora mismo, o se ha mantenido más o menos igual?', 'Oprima 1 si está empeorando, o 2 si ha estado más o menos igual.', 'peor, empeorando, igual, estable']
+    : ['Thanks for that. Is this getting worse right now, or has it been staying about the same?', 'Press 1 if it\'s getting worse, or 2 if it\'s been about the same.', 'worse, getting worse, about the same, same, stable, few days'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
@@ -2107,8 +2107,8 @@ function generatePrescriptionShortcutIntro(baseUrl: string, lang: Lang = 'en'): 
   const v = getVoice(lang);
   const gl = gatherLang(lang);
   const [intro, q] = lang === 'es'
-    ? ['Puedo ayudarle con su solicitud de receta. Necesito algunos detalles.', '¿Cuál es su nombre completo?']
-    : ['I can help with your prescription request. Let me get a few details.', 'What is your full name?'];
+    ? ['Claro, puedo ayudarle con esa solicitud de receta. Déjeme tomar algunos datos.', '¿Cuál es su nombre completo?']
+    : ["Sure, I can help with that prescription request. Let me grab a few details.", "What's your full name?"];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${v}">${intro}</Say>
@@ -2168,8 +2168,8 @@ function generatePrescriptionSafetyCheck(baseUrl: string, lang: Lang = 'en'): st
   const gl = gatherLang(lang);
   const hints = hintsYesNo(lang);
   const [q, dtmf] = lang === 'es'
-    ? ['Solo para confirmar—¿tiene pérdida repentina de visión, dolor severo en el ojo, o una lesión en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.']
-    : ['Just to confirm—are you having sudden vision loss, severe eye pain, or an eye injury right now?', 'Press 1 for yes, 2 for no.'];
+    ? ['Solo por seguridad — ¿tiene pérdida repentina de visión, dolor severo en el ojo, o alguna lesión en el ojo en este momento?', 'Oprima 1 para sí, 2 para no.']
+    : ['Just to be safe — are you having any sudden vision loss, severe eye pain, or an eye injury right now?', 'Press 1 for yes, 2 for no.'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
