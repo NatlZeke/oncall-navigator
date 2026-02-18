@@ -415,6 +415,7 @@ serve(async (req) => {
         called_phone: calledPhone,
         conversation_type: 'voice_conversationrelay',
         status: 'in_progress',
+        office_id: onCallInfo.officeId,
         transcript: [],
         metadata: {
           office_name: onCallInfo.officeName,
@@ -451,6 +452,7 @@ serve(async (req) => {
           called_phone: calledPhone,
           conversation_type: 'voice',
           status: 'in_progress',
+          office_id: onCallInfo.officeId,
           transcript: [],
           metadata: {
             office_name: onCallInfo.officeName,
@@ -1524,6 +1526,7 @@ interface SMSFormatterInput {
   chiefComplaint: string;
   symptoms: string[];
   stabilityAssessment?: string;
+  symptomOnset?: string;
   patientLanguage?: string;
 }
 
@@ -1560,6 +1563,7 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
     chiefComplaint,
     symptoms,
     stabilityAssessment,
+    symptomOnset,
     patientLanguage,
   } = input;
 
@@ -1570,7 +1574,8 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
   const estPatient = isEstablishedPatient ? 'Yes' : 'No';
   const postOp = hasRecentSurgery ? 'Yes' : 'No';
   const symptomList = symptoms.length > 0 ? symptoms.slice(0, 3).join(', ') : 'None specified';
-  const onsetLine = stabilityAssessment ? `\nOnset: ${stabilityAssessment}` : '';
+  const onsetLine = symptomOnset ? `\nOnset: ${symptomOnset}` : '';
+  const stabilityLine = stabilityAssessment ? `\nStatus: ${stabilityAssessment}` : '';
   const langLine = patientLanguage && patientLanguage !== 'English' ? `\nLang: ${patientLanguage}` : '';
 
   const longBody = `ONCALL NAVIGATOR — ${officeName}
@@ -1578,7 +1583,7 @@ DISPOSITION: ${disposition} | ${serviceLine}
 Patient: ${safeName} (DOB: ${safeDOB})
 Established: ${estPatient} | PostOp: ${postOp}
 Callback: ${safeCallback}
-Concern: ${safeCC}${onsetLine}${langLine}
+Concern: ${safeCC}${onsetLine}${stabilityLine}${langLine}
 Symptoms: ${symptomList}
 ID: ${escalationId}
 Reply: ACK | CALL | ER | RESOLVED`;
@@ -1590,7 +1595,7 @@ Reply: ACK | CALL | ER | RESOLVED`;
   const shortBody = `${officeName} | ${disposition}
 ${safeName} DOB:${safeDOB} Est:${estPatient} PostOp:${postOp}
 CB:${safeCallback}
-CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}${langLine ? `\n${langLine.trim()}` : ''}
+CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}${stabilityLine ? `\n${stabilityLine.trim()}` : ''}${langLine ? `\n${langLine.trim()}` : ''}
 ID:${escalationId} Reply:ACK/CALL/ER/RESOLVED`;
 
   return { body: shortBody, templateUsed: 'short', charCount: shortBody.length };
@@ -1627,6 +1632,7 @@ async function sendPreCallSMS(
     chiefComplaint: summary.primaryComplaint,
     symptoms: summary.symptoms,
     stabilityAssessment: summary.stabilityAssessment,
+    symptomOnset: intakeData.symptomOnset,
     patientLanguage: summary.patientLanguage,
   });
 

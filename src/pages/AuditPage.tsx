@@ -67,15 +67,33 @@ const AuditPage = () => {
     setLoading(true);
     const merged: AuditEntry[] = [];
 
-    // Query 1: Escalation events
-    const { data: escalationEvents } = await supabase
+    // Query 1: Escalation events (filtered by office via escalations join)
+    let escalationQuery = supabase
       .from('escalation_events')
       .select('id, escalation_id, event_type, event_time, payload, created_at')
       .order('event_time', { ascending: false })
       .limit(100);
 
-    if (escalationEvents) {
-      for (const ev of escalationEvents) {
+    // Filter by office: escalation_events links through escalations table
+    // We use the payload which contains office info, or filter via escalation IDs
+    const { data: escalationEvents } = await escalationQuery;
+
+    // If we have a current office, filter escalation events by matching escalation IDs
+    let filteredEscalationEvents = escalationEvents || [];
+    if (currentOffice?.id && escalationEvents && escalationEvents.length > 0) {
+      const escalationIds = [...new Set(escalationEvents.map(e => e.escalation_id))];
+      const { data: officeEscalations } = await supabase
+        .from('escalations')
+        .select('id')
+        .eq('office_id', currentOffice.id)
+        .in('id', escalationIds);
+
+      const validIds = new Set((officeEscalations || []).map(e => e.id));
+      filteredEscalationEvents = escalationEvents.filter(e => validIds.has(e.escalation_id));
+    }
+
+    if (filteredEscalationEvents) {
+      for (const ev of filteredEscalationEvents) {
         const meta = EVENT_LABELS[ev.event_type] || { label: ev.event_type, variant: 'outline' as const };
         const payload = ev.payload as Record<string, unknown> | null;
         const details = [
