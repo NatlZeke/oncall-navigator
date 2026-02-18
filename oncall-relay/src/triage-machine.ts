@@ -121,8 +121,8 @@ export function processInput(
     state.intake.dispositionReason = state.intake.dispositionReason || 'Caller requested voicemail';
     return {
       responseText: t(state.lang,
-        "I understand you'd like to leave a message. Unfortunately I can't record a voicemail in this mode. Please call back and press zero at the start of the call to leave a voicemail. If this is an emergency, please hang up and dial nine one one. Goodbye.",
-        "Entiendo que desea dejar un mensaje. Desafortunadamente no puedo grabar un mensaje de voz en este modo. Por favor llame de nuevo y oprima cero al inicio de la llamada para dejar un mensaje de voz. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Adiós."
+        "I understand you'd like to leave a message. Unfortunately, I can't record a voicemail in this mode. If you call back and press zero right away, you'll be able to leave one. And if this is an emergency, please hang up and dial nine one one. Take care.",
+        "Entiendo que desea dejar un mensaje. Desafortunadamente, no puedo grabar un mensaje de voz en este modo. Si llama de nuevo y presiona cero al inicio, podrá dejar uno. Si esto es una emergencia, cuelgue y marque el nueve uno uno. Cuídese."
       ),
       nextStage: 'complete',
       endCall: true,
@@ -143,7 +143,7 @@ export function processInput(
       return {
         responseText: t(state.lang,
           `Are you an established patient with ${state.officeName}?`,
-          `¿Es usted un paciente establecido con ${state.officeName}?`
+          `¿Es usted paciente establecido de ${state.officeName}?`
         ),
         nextStage: 'established_gate',
         endCall: false,
@@ -157,14 +157,14 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'established_gate',
           t(state.lang,
-            `Are you an established patient with ${state.officeName}? Say yes or no.`,
-            `¿Es usted un paciente establecido con ${state.officeName}? Diga sí o no.`
+            `Sorry, I didn't catch that. Are you an established patient with ${state.officeName}? Just say yes or no.`,
+            `Disculpe, no le escuché. ¿Es usted paciente establecido de ${state.officeName}? Solo diga sí o no.`
           ),
           // Retry exhausted fallback: non-patient deflection
           () => ({
             responseText: t(state.lang,
-              "I'm having trouble hearing you. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call nine one one. Otherwise, please call our office during business hours. Goodbye.",
-              "Tengo dificultad para escucharle. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, por favor llame a nuestra oficina durante el horario de atención. Adiós."
+              "I'm having trouble hearing you. Our after-hours service is for established patients only. If this is an emergency, please head to the nearest E R or call nine one one. Otherwise, give us a call when the office opens. Take care.",
+              "Tengo dificultad para escucharle. Nuestro servicio fuera de horario es solo para pacientes establecidos. Si es una emergencia, vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, llámenos cuando abra la oficina. Cuídese."
             ),
             nextStage: 'complete' as const,
             endCall: true,
@@ -178,8 +178,8 @@ export function processInput(
       if (!isEstablished) {
         return {
           responseText: t(state.lang,
-            "Thanks for calling. After-hours support is available for established patients only. If this is an emergency, please go to the nearest emergency room or call nine one one. Otherwise, please call our office during business hours to schedule an appointment. Goodbye.",
-            "Gracias por llamar. El servicio fuera de horario está disponible solo para pacientes establecidos. Si esto es una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, por favor llame a nuestra oficina durante el horario de atención para hacer una cita. Adiós."
+            "Thanks for calling. Our after-hours line is for established patients only. If this is an emergency, please head to the nearest E R or call nine one one. Otherwise, give us a call during office hours to schedule an appointment. Take care.",
+            "Gracias por llamar. Nuestra línea fuera de horario es solo para pacientes establecidos. Si es una emergencia, vaya a la sala de emergencias más cercana o llame al nueve uno uno. De lo contrario, llámenos durante el horario de oficina para hacer una cita. Cuídese."
           ),
           nextStage: 'complete',
           endCall: true,
@@ -191,8 +191,8 @@ export function processInput(
         state.intake.isPrescriptionRequest = true;
         return {
           responseText: t(state.lang,
-            "I can help with your prescription request. Let me get a few details. What is your full name?",
-            "Puedo ayudarle con su solicitud de receta. Necesito algunos detalles. ¿Cuál es su nombre completo?"
+            "Sure, I can help with that prescription request. Let me grab a few details. What's your full name?",
+            "Claro, puedo ayudarle con esa solicitud de receta. Déjeme tomar algunos datos. ¿Cuál es su nombre completo?"
           ),
           nextStage: 'prescription_name',
           endCall: false,
@@ -201,8 +201,8 @@ export function processInput(
 
       return {
         responseText: t(state.lang,
-          "Great, I'll collect a few quick details. What is your full name?",
-          "Muy bien, voy a tomar algunos datos rápidos. ¿Cuál es su nombre completo?"
+          "Great, let me grab a few quick details. What's your full name?",
+          "Muy bien, déjeme tomar algunos datos rápidos. ¿Cuál es su nombre completo?"
         ),
         nextStage: 'collect_name',
         endCall: false,
@@ -215,11 +215,11 @@ export function processInput(
     case 'collect_name': {
       if (!input && !digit) {
         return handleRetry(state, 'collect_name',
-          t(state.lang, "I didn't catch that. Can I get your full name?", "No le escuché. ¿Puede darme su nombre completo?"),
+          t(state.lang, "Sorry, I didn't catch that. Can you tell me your full name?", "Disculpe, no le escuché. ¿Me puede decir su nombre completo?"),
           () => {
             state.intake.patientName = 'Not provided';
             return {
-              responseText: t(state.lang, "What is your date of birth?", "¿Cuál es su fecha de nacimiento?"),
+              responseText: t(state.lang, "Got it. And what's your date of birth?", "Entendido. ¿Y cuál es su fecha de nacimiento?"),
               nextStage: 'ask_dob' as const,
               endCall: false,
             };
@@ -228,7 +228,7 @@ export function processInput(
       }
       state.intake.patientName = input || 'Not provided';
       return {
-        responseText: t(state.lang, "What is your date of birth?", "¿Cuál es su fecha de nacimiento?"),
+        responseText: t(state.lang, "Got it. And what's your date of birth?", "Entendido. ¿Y cuál es su fecha de nacimiento?"),
         nextStage: 'ask_dob',
         endCall: false,
       };
@@ -240,7 +240,7 @@ export function processInput(
     case 'ask_dob': {
       if (!input && !digit) {
         return handleRetry(state, 'ask_dob',
-          t(state.lang, "What is your date of birth?", "¿Cuál es su fecha de nacimiento?"),
+          t(state.lang, "Can you tell me your date of birth?", "¿Me puede decir su fecha de nacimiento?"),
           () => {
             state.intake.dateOfBirth = 'Not provided';
             return askCallback(state);
@@ -258,8 +258,8 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'ask_callback',
           t(state.lang,
-            `Can I reach you at the number you're calling from? Say yes, or tell me a different number.`,
-            `¿Podemos llamarle al número desde el que llama? Diga sí, o dígame un número diferente.`
+            `Can we reach you at the number you're calling from, or is there a better number?`,
+            `¿Podemos llamarle al número desde el que está llamando, o hay un mejor número?`
           ),
           () => {
             state.intake.callbackNumber = state.callerPhone;
@@ -280,8 +280,8 @@ export function processInput(
       const spokenCallback = formatPhoneForTTS(state.intake.callbackNumber);
       return {
         responseText: t(state.lang,
-          `I have your callback number as ${spokenCallback}. Is that correct?`,
-          `Tengo su número de devolución de llamada como ${spokenCallback}. ¿Es correcto?`
+          `Okay, I have ${spokenCallback}. Is that right?`,
+          `Bien, tengo ${spokenCallback}. ¿Es correcto?`
         ),
         nextStage: 'confirm_callback',
         endCall: false,
@@ -295,8 +295,8 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'confirm_callback',
           t(state.lang,
-            `I have ${formatPhoneForTTS(state.intake.callbackNumber!)}. Is that correct? Say yes or no.`,
-            `Tengo ${formatPhoneForTTS(state.intake.callbackNumber!)}. ¿Es correcto? Diga sí o no.`
+            `Just to confirm, I have ${formatPhoneForTTS(state.intake.callbackNumber!)}. Is that right?`,
+            `Solo para confirmar, tengo ${formatPhoneForTTS(state.intake.callbackNumber!)}. ¿Está correcto?`
           ),
           () => {
             // Retry exhausted — accept current number
@@ -376,8 +376,8 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'ask_postop',
           t(state.lang,
-            "Have you had eye surgery in the last 14 days? Say yes or no.",
-            "¿Ha tenido cirugía de ojos en los últimos 14 días? Diga sí o no."
+            "Sorry, have you had any eye surgery in the last two weeks? Just say yes or no.",
+            "Disculpe, ¿ha tenido alguna cirugía de ojos en las últimas dos semanas? Solo diga sí o no."
           ),
           () => {
             state.intake.hasRecentSurgery = false;
@@ -396,8 +396,8 @@ export function processInput(
         state.intake.symptoms.push('post-operative concern');
         return {
           responseText: t(state.lang,
-            "Got it. Can you briefly tell me what's going on? Please describe what you're experiencing.",
-            "Entendido. ¿Puede decirme brevemente qué le pasa? Por favor describa lo que está experimentando."
+            "Okay, got it. Can you tell me briefly what's going on? Just describe what you're experiencing.",
+            "Entendido. ¿Puede decirme brevemente qué le está pasando? Solo describa lo que está sintiendo."
           ),
           nextStage: 'postop_complaint',
           endCall: false,
@@ -418,8 +418,8 @@ export function processInput(
       if (!input) {
         return handleRetry(state, 'postop_complaint',
           t(state.lang,
-            "Please describe what you're experiencing.",
-            "Por favor describa lo que está experimentando."
+            "Can you describe what you're experiencing?",
+            "¿Puede describir lo que está sintiendo?"
           ),
           () => {
             state.intake.primaryComplaint = 'Post-op concern (unable to capture details)';
@@ -580,8 +580,8 @@ export function processInput(
 
       return {
         responseText: t(state.lang,
-          "Thank you for that information. Is this getting worse right now, or has it been about the same?",
-          "Gracias por esa información. ¿Esto está empeorando ahora mismo, o ha estado más o menos igual?"
+          "Thanks for that. Is this getting worse right now, or has it been staying about the same?",
+          "Gracias. ¿Esto está empeorando ahora mismo, o se ha mantenido más o menos igual?"
         ),
         nextStage: 'stability_check',
         endCall: false,
@@ -595,8 +595,8 @@ export function processInput(
       if (!input && !digit) {
         return handleRetry(state, 'stability_check',
           t(state.lang,
-            "Is this getting worse right now, or has it been about the same? Say worse or same.",
-            "¿Esto está empeorando ahora mismo, o ha estado más o menos igual? Diga peor o igual."
+            "Sorry, is this getting worse, or has it been about the same? Just say worse or same.",
+            "Disculpe, ¿está empeorando, o se ha mantenido igual? Solo diga peor o igual."
           ),
           () => {
             // Fail-safe: escalate
@@ -634,8 +634,8 @@ export function processInput(
             state.intake.patientName = 'Not provided';
             return {
               responseText: t(state.lang,
-                `Can I reach you at the number you're calling from? Say yes, or tell me a different number.`,
-                `¿Podemos llamarle al número desde el que llama? Diga sí, o dígame un número diferente.`
+                `Can we reach you at the number you're calling from, or is there a better number?`,
+                `¿Podemos llamarle al número desde el que está llamando, o hay un mejor número?`
               ),
               nextStage: 'prescription_callback' as const,
               endCall: false,
@@ -646,8 +646,8 @@ export function processInput(
       state.intake.patientName = input;
       return {
         responseText: t(state.lang,
-          `Can I reach you at the number you're calling from? Say yes, or tell me a different number.`,
-          `¿Podemos llamarle al número desde el que llama? Diga sí, o dígame un número diferente.`
+          `Can we reach you at the number you're calling from, or is there a better number?`,
+          `¿Podemos llamarle al número desde el que está llamando, o hay un mejor número?`
         ),
         nextStage: 'prescription_callback',
         endCall: false,
@@ -726,7 +726,7 @@ export function processInput(
       if (hasEmergentSymptoms) {
         // Needs DOB then red flag screen
         return {
-          responseText: t(state.lang, "What is your date of birth?", "¿Cuál es su fecha de nacimiento?"),
+          responseText: t(state.lang, "Okay, I need to get a bit more information. What's your date of birth?", "Bien, necesito un poco más de información. ¿Cuál es su fecha de nacimiento?"),
           nextStage: 'prescription_emergency_dob',
           endCall: false,
         };
@@ -743,7 +743,7 @@ export function processInput(
     case 'prescription_emergency_dob': {
       if (!input && !digit) {
         return handleRetry(state, 'prescription_emergency_dob',
-          t(state.lang, "What is your date of birth?", "¿Cuál es su fecha de nacimiento?"),
+          t(state.lang, "Okay, I need to get a bit more information. What's your date of birth?", "Bien, necesito un poco más de información. ¿Cuál es su fecha de nacimiento?"),
           () => {
             state.intake.dateOfBirth = 'Not provided';
             return { responseText: redFlag1Text(state.lang), nextStage: 'redflag_1' as const, endCall: false };
@@ -759,7 +759,7 @@ export function processInput(
     // ========================================================================
     case 'complete':
       return {
-        responseText: t(state.lang, "Goodbye.", "Adiós."),
+        responseText: t(state.lang, "Take care.", "Cuídese."),
         nextStage: 'complete',
         endCall: true,
       };
@@ -801,8 +801,8 @@ function handleRetry(
 function askCallback(state: TriageState): TriageResult {
   return {
     responseText: t(state.lang,
-      `Can I reach you at the number you're calling from? Say yes, or tell me a different number.`,
-      `¿Podemos llamarle al número desde el que llama? Diga sí, o dígame un número diferente.`
+      `Can we reach you at the number you're calling from, or is there a better number?`,
+      `¿Podemos llamarle al número desde el que está llamando, o hay un mejor número?`
     ),
     nextStage: 'ask_callback',
     endCall: false,
@@ -820,8 +820,8 @@ function transitionAfterCallback(state: TriageState): TriageResult {
 
     return {
       responseText: t(state.lang,
-        `Which doctor do you see at ${state.officeName}? For example, ${nameList}.`,
-        `¿Con qué doctor se atiende en ${state.officeName}? Por ejemplo, ${nameList}.`
+        `And who's your doctor at ${state.officeName}? For example, ${nameList}.`,
+        `¿Y quién es su doctor en ${state.officeName}? Por ejemplo, ${nameList}.`
       ),
       nextStage: 'ask_patient_doctor',
       endCall: false,
@@ -841,8 +841,8 @@ function askPostOpText(state: TriageState): string {
     : t(state.lang, 'Thank you.', 'Gracias.');
 
   return `${nameGreeting} ${t(state.lang,
-    'Now I need to ask a few quick safety questions. Have you had eye surgery in the last 14 days?',
-    'Ahora necesito hacerle unas preguntas rápidas de seguridad. ¿Ha tenido cirugía de ojos en los últimos 14 días?'
+    'I just need to ask a few quick safety questions. Have you had any eye surgery in the last two weeks?',
+    'Solo necesito hacerle unas preguntas rápidas de seguridad. ¿Ha tenido alguna cirugía de ojos en las últimas dos semanas?'
   )}`;
 }
 
@@ -853,8 +853,8 @@ function dispositionResponse(state: TriageState): TriageResult {
     case 'ER_NOW':
       return {
         responseText: t(state.lang,
-          "Thank you for that information. Based on what you've described, you should go to the nearest emergency room right away. This is a time-sensitive eye concern that needs immediate attention. We are also notifying the on-call doctor. Goodbye.",
-          "Gracias por esa información. Basado en lo que ha descrito, debe ir a la sala de emergencias más cercana de inmediato. Esta es una preocupación ocular que requiere atención inmediata. También estamos notificando al doctor de guardia. Adiós."
+          "Okay, based on what you've told me, you need to get to the nearest emergency room right away. This needs immediate attention. We're also notifying the on-call doctor now. Please take care of yourself.",
+          "Bien, basado en lo que me ha dicho, necesita ir a la sala de emergencias más cercana de inmediato. Esto necesita atención inmediata. También estamos notificando al doctor de guardia ahora. Por favor, cuídese."
         ),
         nextStage: 'complete',
         endCall: true,
@@ -864,8 +864,8 @@ function dispositionResponse(state: TriageState): TriageResult {
     case 'URGENT_CALLBACK':
       return {
         responseText: t(state.lang,
-          "Thank you for that information. Let me get this to the right place. I'm sending your information to the on-call doctor now. They will call you back shortly. If your condition worsens or you develop an emergency, please go to the nearest emergency room or call nine one one. Goodbye.",
-          "Gracias por esa información. Permítame enviar esto al lugar correcto. Estoy enviando su información al doctor de guardia ahora. Le devolverán la llamada pronto. Si su condición empeora o tiene una emergencia, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. Adiós."
+          "Okay, let me get this to the right place. I'm sending your information to the on-call doctor now, and they'll call you back shortly. If things get worse in the meantime, please head to the nearest E R or call nine one one. Take care.",
+          "Bien, déjeme enviar esto al lugar correcto. Estoy enviando su información al doctor de guardia ahora, y le devolverán la llamada pronto. Si las cosas empeoran mientras tanto, vaya a la sala de emergencias más cercana o llame al nueve uno uno. Cuídese."
         ),
         nextStage: 'complete',
         endCall: true,
@@ -881,8 +881,8 @@ function dispositionResponse(state: TriageState): TriageResult {
 function nextBusinessDayResponse(state: TriageState): TriageResult {
   return {
     responseText: t(state.lang,
-      `Thank you for that information. Based on what you've described, this can be handled during our next business day. Please call ${state.officeName} when the office opens and we'll be happy to help you. If your condition worsens or you develop sudden vision loss, severe pain, or an eye injury, please go to the nearest emergency room or call nine one one. Goodbye.`,
-      `Gracias por esa información. Basado en lo que ha descrito, esto puede ser atendido durante nuestro próximo día hábil. Por favor llame a ${state.officeName} cuando abra la oficina y con gusto le atenderemos. Si su condición empeora o desarrolla pérdida repentina de visión, dolor severo, o una lesión en el ojo, por favor vaya a la sala de emergencias más cercana o llame al nueve uno uno. Adiós.`
+      `Based on what you've described, this is something that can be handled when the office opens. Please call ${state.officeName} during business hours and we'll take care of you. If things get worse, or you have sudden vision loss, severe pain, or an eye injury, head to the nearest E R or call nine one one. Take care.`,
+      `Basado en lo que me ha dicho, esto es algo que se puede atender cuando abra la oficina. Por favor llame a ${state.officeName} durante el horario de oficina y le atenderemos. Si las cosas empeoran, o tiene pérdida repentina de visión, dolor severo, o una lesión en el ojo, vaya a la sala de emergencias más cercana o llame al nueve uno uno. Cuídese.`
     ),
     nextStage: 'complete',
     endCall: true,
@@ -896,42 +896,42 @@ function nextBusinessDayResponse(state: TriageState): TriageResult {
 
 function redFlag1Text(lang: Lang): string {
   return t(lang,
-    "Are you having sudden vision loss or a major sudden change in vision?",
-    "¿Tiene pérdida repentina de visión o un cambio importante y repentino en su visión?"
+    "Are you having any sudden vision loss, or a big sudden change in your vision?",
+    "¿Está teniendo alguna pérdida repentina de visión, o un cambio grande y repentino en su visión?"
   );
 }
 
 function redFlag2Text(lang: Lang): string {
   return t(lang,
-    "Do you see new flashes or floaters together with a curtain or shadow in your vision?",
-    "¿Ve destellos o puntos flotantes nuevos junto con una cortina o sombra en su visión?"
+    "Okay, next question. Are you seeing any new flashes or floaters, especially with a curtain or shadow across your vision?",
+    "Bien, siguiente pregunta. ¿Está viendo destellos o puntos flotantes nuevos, especialmente con una cortina o sombra en su visión?"
   );
 }
 
 function redFlag3Text(lang: Lang): string {
   return t(lang,
-    "Are you having severe eye pain right now?",
-    "¿Tiene dolor severo en el ojo en este momento?"
+    "Are you having any severe eye pain right now?",
+    "¿Tiene algún dolor severo en el ojo en este momento?"
   );
 }
 
 function redFlag4Text(lang: Lang): string {
   return t(lang,
-    "Was there any trauma to your eye or any chemical exposure?",
-    "¿Hubo algún trauma en su ojo o exposición a químicos?"
+    "And has there been any injury to your eye, or any kind of chemical splash or exposure?",
+    "¿Y ha tenido alguna lesión en el ojo, o algún tipo de contacto con químicos?"
   );
 }
 
 function briefComplaintText(lang: Lang): string {
   return t(lang,
-    "Good. Now, in your own words, what's going on with your eyes tonight? Please briefly describe your concern.",
-    "Bien. Ahora, con sus propias palabras, ¿qué le pasa con sus ojos esta noche? Por favor describa brevemente su preocupación."
+    "Good. So in your own words, what's going on with your eyes tonight? Just give me a brief description.",
+    "Bien. Con sus propias palabras, ¿qué le está pasando con sus ojos esta noche? Solo déme una breve descripción."
   );
 }
 
 function prescriptionSafetyText(lang: Lang): string {
   return t(lang,
-    "Just to confirm—are you having sudden vision loss, severe eye pain, or an eye injury right now?",
-    "Solo para confirmar—¿tiene pérdida repentina de visión, dolor severo en el ojo, o una lesión en el ojo en este momento?"
+    "Just to be safe — are you having any sudden vision loss, severe eye pain, or an eye injury right now?",
+    "Solo por seguridad — ¿tiene pérdida repentina de visión, dolor severo en el ojo, o alguna lesión en el ojo en este momento?"
   );
 }
