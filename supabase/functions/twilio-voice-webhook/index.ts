@@ -21,8 +21,8 @@ const corsHeaders = {
 // To change voices: browse the Twilio voice picker linked above, copy a voice ID,
 // and replace the ID portion below (everything before the first hyphen).
 
-const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-eleven_multilingual_v2-0.92_0.65_0.70';  // Sarah — warm, calm American female (natural tuning)
-const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-eleven_multilingual_v2-0.92_0.65_0.70';  // Charlotte — multilingual, warm female (natural tuning)
+const ELEVENLABS_VOICE_EN = 'EXAVITQu4vr4xnSDxMaL-flash_v2_5-0.92_0.65_0.70';  // Sarah — warm, calm American female (natural tuning, low-latency)
+const ELEVENLABS_VOICE_ES = 'XB0fDUnXU5powFXDhCwa-flash_v2_5-0.92_0.65_0.70';  // Charlotte — multilingual, warm female (natural tuning, low-latency)
 
 // Polly voices remain for <Say>/<Gather> path (ElevenLabs not available for <Say>)
 const POLLY_VOICE_EN = 'Polly.Joanna-Neural';
@@ -634,7 +634,7 @@ serve(async (req) => {
             intakeData.callbackConfirmed = true;
             transcript.push({ role: 'caller', content: 'confirmed default callback', timestamp: new Date().toISOString() });
             
-            if (onCallInfo.requiresPatientDoctorConfirmation) {
+            if (Object.keys(onCallInfo.providerDirectory).length > 0) {
               twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl, lang);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
             } else {
@@ -670,7 +670,7 @@ serve(async (req) => {
             intakeData.callbackConfirmed = true;
             transcript.push({ role: 'caller', content: 'confirmed', timestamp: new Date().toISOString() });
             
-            if (onCallInfo.requiresPatientDoctorConfirmation) {
+            if (Object.keys(onCallInfo.providerDirectory).length > 0) {
               twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl, lang);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
             } else {
@@ -686,7 +686,7 @@ serve(async (req) => {
           if (retries >= MAX_RETRIES) {
             intakeData.callbackConfirmed = true;
             transcript.push({ role: 'system', content: 'Callback confirmation retry exhausted — accepted current number', timestamp: new Date().toISOString() });
-            if (onCallInfo.requiresPatientDoctorConfirmation) {
+            if (Object.keys(onCallInfo.providerDirectory).length > 0) {
               twimlResponse = generateAskPatientDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl, lang);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'ask_patient_doctor', intake_data: intakeData });
             } else {

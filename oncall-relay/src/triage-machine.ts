@@ -189,6 +189,23 @@ export function processInput(
       // Check for prescription shortcut in the response
       if (input && isPrescriptionRequest(input)) {
         state.intake.isPrescriptionRequest = true;
+
+        // Ask which doctor before proceeding to prescription details
+        if (Object.keys(state.providerDirectory).length > 0) {
+          const uniqueNames = [...new Set(Object.values(state.providerDirectory).map(p => p.name))];
+          const nameList = uniqueNames.length <= 4
+            ? uniqueNames.join(', ')
+            : uniqueNames.slice(0, 4).join(', ');
+          return {
+            responseText: t(state.lang,
+              `Sure, I can help with that prescription request. First, who's your doctor at ${state.officeName}? For example, ${nameList}. If you're not sure, just say I don't know.`,
+              `Claro, puedo ayudarle con esa solicitud de receta. Primero, ¿quién es su doctor en ${state.officeName}? Por ejemplo, ${nameList}. Si no está seguro, solo diga no sé.`
+            ),
+            nextStage: 'prescription_doctor',
+            endCall: false,
+          };
+        }
+
         return {
           responseText: t(state.lang,
             "Sure, I can help with that prescription request. Let me grab a few details. What's your full name?",
@@ -344,6 +361,18 @@ export function processInput(
       if (input) {
         const doctorResponse = input.toLowerCase();
         state.intake.patientDoctor = input;
+
+        // Check if patient explicitly doesn't know their doctor
+        const dontKnowPatterns = /\b(don't know|do not know|not sure|unsure|no sé|no se|no recuerdo)\b/i;
+        if (dontKnowPatterns.test(input)) {
+          state.intake.patientDoctor = 'Unknown — patient unsure';
+          state.transcript.push({ role: 'system', content: 'Patient does not know their doctor — using default on-call provider', ts });
+          return {
+            responseText: askPostOpText(state),
+            nextStage: 'ask_postop',
+            endCall: false,
+          };
+        }
 
         // Try to match spoken name against provider directory keywords
         let matched = false;
@@ -624,6 +653,64 @@ export function processInput(
     }
 
     // ========================================================================
+    // PRESCRIPTION DOCTOR (asks doctor before prescription details)
+    // ========================================================================
+    case 'prescription_doctor': {
+      if (!input && !digit) {
+        return handleRetry(state, 'prescription_doctor',
+          t(state.lang, "Which doctor do you see at our office? If you're not sure, just say I don't know.", "¿Con qué doctor se atiende en nuestra oficina? Si no está seguro, solo diga no sé."),
+          () => {
+            state.transcript.push({ role: 'system', content: 'Doctor selection skipped (prescription flow) — using default on-call provider', ts });
+            return {
+              responseText: t(state.lang,
+                "No problem. Let me grab a few details. What's your full name?",
+                "No hay problema. Déjeme tomar algunos datos. ¿Cuál es su nombre completo?"
+              ),
+              nextStage: 'prescription_name' as const,
+              endCall: false,
+            };
+          }
+        );
+      }
+
+      if (input) {
+        const doctorResponse = input.toLowerCase();
+        state.intake.patientDoctor = input;
+
+        // Check if patient doesn't know
+        const dontKnowPatterns = /\b(don't know|do not know|not sure|unsure|no sé|no se|no recuerdo)\b/i;
+        if (dontKnowPatterns.test(input)) {
+          state.intake.patientDoctor = 'Unknown — patient unsure';
+          state.transcript.push({ role: 'system', content: 'Patient does not know their doctor (prescription flow) — using default on-call provider', ts });
+        } else {
+          // Try to match spoken name against provider directory keywords
+          let matched = false;
+          for (const [keyword, provider] of Object.entries(state.providerDirectory)) {
+            if (doctorResponse.includes(keyword)) {
+              state.intake.matchedProviderName = provider.name;
+              state.intake.matchedProviderPhone = provider.phone;
+              state.transcript.push({ role: 'system', content: `Doctor matched (prescription flow): ${provider.name} (keyword: "${keyword}")`, ts });
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) {
+            state.transcript.push({ role: 'system', content: `No provider match for: "${input}" (prescription flow) — using default on-call provider`, ts });
+          }
+        }
+      }
+
+      return {
+        responseText: t(state.lang,
+          "Got it. Let me grab a few details. What's your full name?",
+          "Entendido. Déjeme tomar algunos datos. ¿Cuál es su nombre completo?"
+        ),
+        nextStage: 'prescription_name',
+        endCall: false,
+      };
+    }
+
+    // ========================================================================
     // PRESCRIPTION FLOW
     // ========================================================================
     case 'prescription_name': {
@@ -820,8 +907,8 @@ function transitionAfterCallback(state: TriageState): TriageResult {
 
     return {
       responseText: t(state.lang,
-        `And who's your doctor at ${state.officeName}? For example, ${nameList}.`,
-        `¿Y quién es su doctor en ${state.officeName}? Por ejemplo, ${nameList}.`
+        `And who's your doctor at ${state.officeName}? For example, ${nameList}. If you're not sure, just say I don't know.`,
+        `¿Y quién es su doctor en ${state.officeName}? Por ejemplo, ${nameList}. Si no está seguro, solo diga no sé.`
       ),
       nextStage: 'ask_patient_doctor',
       endCall: false,

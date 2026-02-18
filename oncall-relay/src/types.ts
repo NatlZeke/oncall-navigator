@@ -7,7 +7,7 @@ export type TriageStage =
   | 'ask_callback' | 'confirm_callback' | 'ask_patient_doctor' | 'ask_postop' | 'postop_complaint'
   | 'redflag_1' | 'redflag_2' | 'redflag_3' | 'redflag_4'
   | 'brief_complaint' | 'stability_check'
-  | 'prescription_name' | 'prescription_callback' | 'prescription_medication'
+  | 'prescription_doctor' | 'prescription_name' | 'prescription_callback' | 'prescription_medication'
   | 'prescription_safety' | 'prescription_emergency_dob'
   | 'complete';
 
