@@ -791,18 +791,12 @@ export function processInput(
       // Try to determine if they're correcting name or number
       const hasDigits = /\d{3,}/.test(input);
       if (hasDigits) {
-        // Likely a phone number correction
+      // Likely a phone number correction
         state.intake.callbackNumber = input;
         const spoken = formatPhoneForTTS(input);
         state.transcript.push({ role: 'system', content: `Callback number corrected to: ${input}`, ts });
-        return {
-          responseText: t(state.lang,
-            `Got it, I've updated your callback number to ${spoken}. Thank you.`,
-            `Entendido, he actualizado su número de contacto a ${spoken}. Gracias.`
-          ),
-          nextStage: 'complete' as any,
-          endCall: false,
-        };
+        // Deliver disposition with updated callback number
+        return dispositionResponse(state);
       } else {
         // Likely a name correction
         state.intake.patientName = input;

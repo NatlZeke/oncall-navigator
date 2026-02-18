@@ -82,6 +82,7 @@ interface SMSFormatterInput {
   chiefComplaint: string;
   symptoms: string[];
   stabilityAssessment?: string;
+  symptomOnset?: string;
   patientLanguage?: string;
 }
 
@@ -99,6 +100,7 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
     chiefComplaint,
     symptoms,
     stabilityAssessment,
+    symptomOnset,
     patientLanguage,
   } = input;
 
@@ -109,7 +111,8 @@ function formatOnCallSummarySMS(input: SMSFormatterInput): { body: string; templ
   const estPatient = isEstablishedPatient ? 'Yes' : 'No';
   const postOp = hasRecentSurgery ? 'Yes' : 'No';
   const symptomList = symptoms.length > 0 ? symptoms.slice(0, 3).join(', ') : 'None specified';
-  const onsetLine = stabilityAssessment ? `\nOnset: ${stabilityAssessment}` : '';
+  const onsetLine = symptomOnset ? `\nOnset: ${symptomOnset}` : '';
+  const stabilityLine = stabilityAssessment ? `\nStatus: ${stabilityAssessment}` : '';
   const langLine = patientLanguage && patientLanguage !== 'English' ? `\nLang: ${patientLanguage}` : '';
 
   const longBody = `ONCALL NAVIGATOR — ${officeName}
@@ -117,7 +120,7 @@ DISPOSITION: ${disposition} | ${serviceLine}
 Patient: ${safeName} (DOB: ${safeDOB})
 Established: ${estPatient} | PostOp: ${postOp}
 Callback: ${safeCallback}
-Concern: ${safeCC}${onsetLine}${langLine}
+Concern: ${safeCC}${onsetLine}${stabilityLine}${langLine}
 Symptoms: ${symptomList}
 ID: ${escalationId}
 Reply: ACK | CALL | ER | RESOLVED`;
@@ -129,7 +132,7 @@ Reply: ACK | CALL | ER | RESOLVED`;
   const shortBody = `${officeName} | ${disposition}
 ${safeName} DOB:${safeDOB} Est:${estPatient} PostOp:${postOp}
 CB:${safeCallback}
-CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}${langLine ? `\n${langLine.trim()}` : ''}
+CC:${safeCC}${onsetLine ? `\n${onsetLine.trim()}` : ''}${stabilityLine ? `\n${stabilityLine.trim()}` : ''}${langLine ? `\n${langLine.trim()}` : ''}
 ID:${escalationId} Reply:ACK/CALL/ER/RESOLVED`;
 
   return { body: shortBody, templateUsed: 'short', charCount: shortBody.length };
@@ -202,6 +205,7 @@ serve(async (req) => {
       .from('twilio_conversations')
       .update({
         status: 'completed',
+        office_id: officeId,
         transcript: transcript || [],
         metadata: {
           office_id: officeId,
@@ -362,6 +366,7 @@ serve(async (req) => {
         chiefComplaint: intake.primaryComplaint || 'Not stated',
         symptoms: intake.symptoms,
         stabilityAssessment,
+        symptomOnset: intake.symptomOnset,
         patientLanguage,
       }, officeId);
 
