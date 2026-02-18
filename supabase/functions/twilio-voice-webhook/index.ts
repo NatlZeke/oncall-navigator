@@ -425,10 +425,12 @@ serve(async (req) => {
         }
       });
 
+      const providerNames = [...new Set(Object.values(onCallInfo.providerDirectory).map(p => p.name))];
       const crTwiml = generateConversationRelayTwiml(
         onCallInfo.conversationRelayUrl,
         onCallInfo.officeName,
-        onCallInfo.spanishEnabled || false
+        onCallInfo.spanishEnabled || false,
+        providerNames
       );
 
       await logWebhookHealth(supabase, 'success', undefined, { stage: 'conversation_relay_handoff' }, callerPhone, callSid, Date.now() - startTime);
@@ -561,8 +563,14 @@ serve(async (req) => {
             
             if (speechResult && isPrescriptionRequest(speechResult)) {
               intakeData.isPrescriptionRequest = true;
-              twimlResponse = generatePrescriptionShortcutIntro(supabaseUrl, lang);
-              await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_name', intake_data: intakeData });
+              // Ask which doctor before prescription details (matches ConversationRelay behavior)
+              if (Object.keys(onCallInfo.providerDirectory).length > 0) {
+                twimlResponse = generatePrescriptionDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl, lang);
+                await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_doctor', intake_data: intakeData });
+              } else {
+                twimlResponse = generatePrescriptionShortcutIntro(supabaseUrl, lang);
+                await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_name', intake_data: intakeData });
+              }
             } else {
               twimlResponse = generateCollectNameResponse(supabaseUrl, lang);
               await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'collect_name', intake_data: intakeData });
@@ -995,6 +1003,49 @@ serve(async (req) => {
       // ============================================================================
       // PRESCRIPTION SHORTCUT
       // ============================================================================
+      case 'prescription_doctor':
+        if (speechResult) {
+          const doctorResponse = speechResult.toLowerCase();
+          intakeData.patientDoctor = speechResult;
+          transcript.push({ role: 'caller', content: speechResult, timestamp: new Date().toISOString() });
+
+          // Check if patient doesn't know
+          const dontKnowRx = /\b(don't know|do not know|not sure|unsure|no sé|no se|no recuerdo)\b/i;
+          if (dontKnowRx.test(speechResult)) {
+            intakeData.patientDoctor = 'Unknown — patient unsure';
+            transcript.push({ role: 'system', content: 'Patient unsure of doctor (prescription flow) — using default on-call', timestamp: new Date().toISOString() });
+          } else {
+            let matchedRx = false;
+            for (const [keyword, provider] of Object.entries(onCallInfo.providerDirectory)) {
+              if (doctorResponse.includes(keyword)) {
+                intakeData.routedToProvider = provider;
+                transcript.push({ role: 'system', content: `Doctor matched (prescription): ${provider.name}`, timestamp: new Date().toISOString() });
+                matchedRx = true;
+                break;
+              }
+            }
+            if (!matchedRx) {
+              transcript.push({ role: 'system', content: `No provider match: "${speechResult}" (prescription) — using default`, timestamp: new Date().toISOString() });
+            }
+          }
+
+          twimlResponse = generatePrescriptionShortcutIntro(supabaseUrl, lang);
+          await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_name', intake_data: intakeData });
+        } else {
+          const retries = getRetryCount(metadata, 'prescription_doctor');
+          if (retries >= MAX_RETRIES) {
+            intakeData.routedToProvider = onCallInfo.onCallProvider;
+            transcript.push({ role: 'system', content: 'Doctor selection skipped (prescription, retry exhausted) — using default', timestamp: new Date().toISOString() });
+            twimlResponse = generatePrescriptionShortcutIntro(supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, { ...metadata, stage: 'prescription_name', intake_data: intakeData });
+          } else {
+            const updatedMeta = incrementRetry(metadata, 'prescription_doctor');
+            twimlResponse = generatePrescriptionDoctorQuestion(onCallInfo.providerDirectory, supabaseUrl, lang);
+            await updateConversation(supabase, callSid, transcript, updatedMeta);
+          }
+        }
+        break;
+
       case 'prescription_name':
         if (speechResult) {
           intakeData.patientName = speechResult;
@@ -1587,14 +1638,15 @@ function escapeXml(text: string): string {
 function generateConversationRelayTwiml(
   wsUrl: string,
   officeName: string,
-  spanishEnabled: boolean
+  spanishEnabled: boolean,
+  providerNames: string[] = []
 ): string {
   const welcomeGreeting = spanishEnabled
     ? `Hi, thanks for calling ${officeName} after hours. If this is an emergency, please hang up and dial nine one one. Gracias por llamar a ${officeName} fuera de horario. Si esto es una emergencia, cuelgue y marque el nueve uno uno. For English, just say English. Para español, diga español.`
     : `Hi, thanks for calling ${officeName} after hours. If this is an emergency, please hang up and dial nine one one. Are you an established patient with ${officeName}?`;
 
   // Expanded hints for ophthalmology triage — improves Deepgram STT accuracy
-  const hints = [
+  const hintParts = [
     // Responses
     'yes, no, yeah, yep, nope, correct, si, no',
     // Triage flow
@@ -1612,7 +1664,14 @@ function generateConversationRelayTwiml(
     'timolol, latanoprost, prednisolone, moxifloxacin, erythromycin',
     // Language selection
     'English, español, Spanish',
-  ].join(', ');
+  ];
+
+  // Add provider names for doctor selection accuracy
+  if (providerNames.length > 0) {
+    hintParts.push(providerNames.join(', '));
+  }
+
+  const hints = hintParts.join(', ');
 
   // Spanish language tag — also uses ElevenLabs with a Spanish-capable voice
   const languageTag = spanishEnabled
@@ -1888,44 +1947,15 @@ function generateCallbackNumberQuestion(baseUrl: string, lang: Lang = 'en'): str
 </Response>`;
 }
 
-function generateCallbackWithDefault(callerPhone: string, baseUrl: string, lang: Lang = 'en'): string {
+function generatePrescriptionDoctorQuestion(
+  providerDirectory: Record<string, { name: string; phone: string }>,
+  baseUrl: string,
+  lang: Lang = 'en'
+): string {
   const v = getVoice(lang);
   const gl = gatherLang(lang);
-  const hints = hintsYesNo(lang);
-  const digitByDigit = formatPhoneDigitByDigit(callerPhone || '');
-  const [q, hint] = lang === 'es'
-    ? [`¿Podemos llamarle al ${escapeXml(digitByDigit)}?`, 'Oprima 1 para sí, o diga o ingrese un número diferente.']
-    : [`Can I reach you at ${escapeXml(digitByDigit)}?`, 'Press 1 for yes, or say or enter a different number.'];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hints}"${gl}>
-    <Say voice="${v}">${q}</Say>
-    <Say voice="${v}">${hint}</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-}
 
-function generateCallbackConfirmation(callback: string, baseUrl: string, lang: Lang = 'en'): string {
-  const v = getVoice(lang);
-  const gl = gatherLang(lang);
-  const digitByDigit = formatPhoneDigitByDigit(callback);
-  const [q, hint, hintAttr] = lang === 'es'
-    ? [`Tengo ${escapeXml(digitByDigit)}. ¿Es correcto?`, 'Oprima 1 para sí, 2 para ingresar otro número.', 'sí, no, correcto']
-    : [`I have ${escapeXml(digitByDigit)}. Is that correct?`, 'Press 1 for yes, 2 to re-enter.', "yes, no, correct, that's right"];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="speech dtmf" timeout="6" speechTimeout="2" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${hintAttr}"${gl}>
-    <Say voice="${v}">${q}</Say>
-    <Say voice="${v}">${hint}</Say>
-  </Gather>
-  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
-</Response>`;
-}
-
-function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { name: string; phone: string }>, baseUrl: string, lang: Lang = 'en'): string {
-  const v = getVoice(lang);
-  const gl = gatherLang(lang);
+  // Build hints from provider names
   const providerKeywords = new Map<string, string[]>();
   for (const [keyword, provider] of Object.entries(providerDirectory)) {
     const existing = providerKeywords.get(provider.name) || [];
@@ -1938,7 +1968,17 @@ function generateAskPatientDoctorQuestion(providerDirectory: Record<string, { na
   }
   hintsList.push(lang === 'es' ? "no sé" : "don't know");
   const hints = hintsList.join(', ');
-  const msg = lang === 'es' ? '¿Y quién es su doctor en nuestra oficina?' : "And who's your doctor at our office?";
+
+  // Build name list for the prompt
+  const uniqueNames = [...providerKeywords.keys()];
+  const nameList = uniqueNames.length <= 4
+    ? uniqueNames.join(', ')
+    : uniqueNames.slice(0, 4).join(', ');
+
+  const msg = lang === 'es'
+    ? `Claro, puedo ayudarle con esa solicitud de receta. Primero, ¿quién es su doctor en nuestra oficina? Por ejemplo, ${nameList}. Si no está seguro, solo diga no sé.`
+    : `Sure, I can help with that prescription request. First, who's your doctor at our office? For example, ${nameList}. If you're not sure, just say I don't know.`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
