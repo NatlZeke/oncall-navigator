@@ -22,7 +22,10 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.sla-escalation-check]
-verify_jwt = true
+verify_jwt = false
+
+[functions.webhook-monitor]
+verify_jwt = false
 
 [functions.conversation-relay-complete]
 verify_jwt = false
