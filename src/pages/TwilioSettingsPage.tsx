@@ -41,7 +41,7 @@ const TwilioSettingsPage = () => {
       const { data, error } = await supabase
         .from('notification_logs')
         .select('*')
-        .in('notification_type', ['sms', 'call', 'escalation_sms', 'escalation_sms_reminder', 'escalation_sms_tier2', 'provider_sms_reply', 'doctor_callback'])
+        .in('notification_type', ['sms', 'call', 'escalation_sms', 'escalation_sms_reminder', 'escalation_sms_tier2', 'provider_sms_reply', 'doctor_callback', 'patient_confirmation_sms'])
         .order('created_at', { ascending: false })
         .limit(10);
 

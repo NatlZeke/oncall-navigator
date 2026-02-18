@@ -6,6 +6,73 @@
  *
  * CRITICAL: All clinical decisions must produce IDENTICAL outcomes to the <Gather> flow.
  * A doctor receiving an SMS should NOT be able to tell which transport was used.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │                    CLINICAL TRIAGE FLOW DIAGRAM                     │
+ * ├──────────────────────────────────────────────────────────────────────┤
+ * │                                                                      │
+ * │  [Spanish enabled?]──Y──► language_gate ──► established_gate         │
+ * │          │                                       │                   │
+ * │          N────────────────────────────────► established_gate         │
+ * │                                                  │                   │
+ * │                          ┌──── N ── "Not established" ── END        │
+ * │                          │                                           │
+ * │                    [Established?]                                    │
+ * │                          │                                           │
+ * │                          Y                                           │
+ * │                          │                                           │
+ * │                   [Rx shortcut?]──Y──► prescription_doctor           │
+ * │                          │               ► prescription_name         │
+ * │                          N               ► prescription_callback     │
+ * │                          │               ► prescription_medication   │
+ * │                          ▼               ► prescription_safety       │
+ * │                    collect_name                   │                   │
+ * │                    ask_dob          [Emergent?]──Y──► Rx emergency   │
+ * │                    ask_callback           │          DOB ► red flags │
+ * │                    ask_patient_doctor     N──► NEXT_BUSINESS_DAY     │
+ * │                          │                                           │
+ * │                          ▼                                           │
+ * │                   [Post-op <14d?]                                    │
+ * │                     │          │                                     │
+ * │                     Y          N                                     │
+ * │                     │          │                                     │
+ * │                     ▼          ▼                                     │
+ * │              postop_complaint  redflag_1: Vision loss?               │
+ * │                     │          redflag_2: Flashes + curtain?         │
+ * │              [Red flag         redflag_3: Severe pain?              │
+ * │               keywords?]       redflag_4: Trauma / chemical?        │
+ * │               │       │              │           │                   │
+ * │               Y       N         Any YES     All NO                  │
+ * │               │       │              │           │                   │
+ * │               ▼       ▼              ▼           ▼                   │
+ * │            ER_NOW  URGENT_CB      ER_NOW   brief_complaint           │
+ * │                                            ask_onset                 │
+ * │                                            stability_check           │
+ * │                                              │          │            │
+ * │                                           Worse      Same            │
+ * │                                              │          │            │
+ * │                                              ▼          ▼            │
+ * │                                     confirm_details                  │
+ * │                                        │       │                     │
+ * │                                      Yes      No                    │
+ * │                                        │       ▼                     │
+ * │                                        │  correct_details            │
+ * │                                        ▼       │                     │
+ * │                                        URGENT_CB   NEXT_BIZ_DAY     │
+ * │                                                                      │
+ * │  DISPOSITIONS:                                                       │
+ * │    ER_NOW ─────────► "Go to ER" + notify on-call doctor             │
+ * │    URGENT_CALLBACK ► "Doctor will call back" + SMS to provider      │
+ * │    NEXT_BUSINESS_DAY ► "Call office when open"                      │
+ * │                                                                      │
+ * │  FAIL-SAFES: All retry exhaustions escalate (URGENT_CALLBACK),      │
+ * │              never deflect. 911 disclaimer on every exit path.       │
+ * │                                                                      │
+ * │  ROUTING: When patient names a doctor, escalation goes to that      │
+ * │           doctor regardless of who is on-call. Otherwise, default   │
+ * │           on-call provider receives the notification.                │
+ * │                                                                      │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 
 import type { TriageState, TriageResult, Disposition, Lang } from './types.js';
@@ -460,7 +527,7 @@ export function processInput(
       }
 
       state.intake.primaryComplaint = input;
-      const hasRedFlagKeywords = /\b(vision loss|can't see|blind|curtain|shadow|chemical|splash|trauma|hit|punch|no puedo ver|ciego|cortina|sombra|químico|golpe)\b/i.test(input.toLowerCase());
+      const hasRedFlagKeywords = /\b(vision loss|can't see|blind|curtain|shadow|chemical|splash|trauma|hit|punch|pus|discharge|oozing|swelling|swollen|redness.{0,10}worse|fever|no puedo ver|ciego|cortina|sombra|químico|golpe|pus|secreción|supurando|hinchazón|hinchado|enrojecimiento|fiebre)\b/i.test(input.toLowerCase());
 
       if (hasRedFlagKeywords) {
         state.intake.disposition = 'ER_NOW';
@@ -469,7 +536,7 @@ export function processInput(
         state.intake.disposition = 'URGENT_CALLBACK';
         state.intake.dispositionReason = 'Post-operative patient concern';
       }
-      return dispositionResponse(state);
+      return confirmDetailsPrompt(state);
     }
 
     // ========================================================================
@@ -609,8 +676,43 @@ export function processInput(
 
       return {
         responseText: t(state.lang,
-          "Thanks for that. Is this getting worse right now, or has it been staying about the same?",
-          "Gracias. ¿Esto está empeorando ahora mismo, o se ha mantenido más o menos igual?"
+          "Thanks for that. And when did this start? For example, today, yesterday, or a few days ago.",
+          "Gracias. ¿Y cuándo comenzó esto? Por ejemplo, hoy, ayer, o hace unos días."
+        ),
+        nextStage: 'ask_onset',
+        endCall: false,
+      };
+    }
+
+    // ========================================================================
+    // SYMPTOM ONSET
+    // ========================================================================
+    case 'ask_onset': {
+      if (!input && !digit) {
+        return handleRetry(state, 'ask_onset',
+          t(state.lang,
+            "When did this start? Just give me a rough idea — today, yesterday, or longer.",
+            "¿Cuándo comenzó esto? Solo una idea general — hoy, ayer, o hace más tiempo."
+          ),
+          () => {
+            state.intake.symptomOnset = 'Not provided';
+            return {
+              responseText: t(state.lang,
+                "No problem. Is this getting worse right now, or has it been staying about the same?",
+                "No hay problema. ¿Esto está empeorando ahora mismo, o se ha mantenido más o menos igual?"
+              ),
+              nextStage: 'stability_check' as const,
+              endCall: false,
+            };
+          }
+        );
+      }
+
+      state.intake.symptomOnset = input || 'Not provided';
+      return {
+        responseText: t(state.lang,
+          "Got it. Is this getting worse right now, or has it been staying about the same?",
+          "Entendido. ¿Esto está empeorando ahora mismo, o se ha mantenido más o menos igual?"
         ),
         nextStage: 'stability_check',
         endCall: false,
@@ -649,7 +751,64 @@ export function processInput(
         state.intake.disposition = 'NEXT_BUSINESS_DAY';
         state.intake.dispositionReason = 'Stable condition - next business day follow-up';
       }
-      return dispositionResponse(state);
+      return confirmDetailsPrompt(state);
+    }
+
+    // ========================================================================
+    // CONFIRM DETAILS (read-back before disposition)
+    // ========================================================================
+    case 'confirm_details': {
+      if (!input && !digit) {
+        // Don't retry — just proceed to disposition
+        return dispositionResponse(state);
+      }
+
+      if (isAffirmative(input) || digit === '1') {
+        // Confirmed — deliver disposition
+        return dispositionResponse(state);
+      }
+
+      // Patient said no — ask what needs correcting
+      return {
+        responseText: t(state.lang,
+          "No problem. What needs to be corrected — your name, or the callback number?",
+          "No hay problema. ¿Qué necesita corregir — su nombre, o el número de contacto?"
+        ),
+        nextStage: 'correct_details',
+        endCall: false,
+      };
+    }
+
+    // ========================================================================
+    // CORRECT DETAILS
+    // ========================================================================
+    case 'correct_details': {
+      if (!input && !digit) {
+        // Can't capture correction — proceed with what we have
+        return dispositionResponse(state);
+      }
+
+      // Try to determine if they're correcting name or number
+      const hasDigits = /\d{3,}/.test(input);
+      if (hasDigits) {
+        // Likely a phone number correction
+        state.intake.callbackNumber = input;
+        const spoken = formatPhoneForTTS(input);
+        state.transcript.push({ role: 'system', content: `Callback number corrected to: ${input}`, ts });
+        return {
+          responseText: t(state.lang,
+            `Got it, I've updated your callback number to ${spoken}. Thank you.`,
+            `Entendido, he actualizado su número de contacto a ${spoken}. Gracias.`
+          ),
+          nextStage: 'complete' as any,
+          endCall: false,
+        };
+      } else {
+        // Likely a name correction
+        state.intake.patientName = input;
+        state.transcript.push({ role: 'system', content: `Patient name corrected to: ${input}`, ts });
+        return dispositionResponse(state);
+      }
     }
 
     // ========================================================================
@@ -931,6 +1090,22 @@ function askPostOpText(state: TriageState): string {
     'I just need to ask a few quick safety questions. Have you had any eye surgery in the last two weeks?',
     'Solo necesito hacerle unas preguntas rápidas de seguridad. ¿Ha tenido alguna cirugía de ojos en las últimas dos semanas?'
   )}`;
+}
+
+function confirmDetailsPrompt(state: TriageState): TriageResult {
+  const name = state.intake.patientName || 'your name';
+  const callback = state.intake.callbackNumber
+    ? formatPhoneForTTS(state.intake.callbackNumber)
+    : 'the number you called from';
+
+  return {
+    responseText: t(state.lang,
+      `Just to make sure I have everything right — your name is ${name}, and we'll reach you at ${callback}. Is that correct?`,
+      `Solo para confirmar que tengo todo correcto — su nombre es ${name}, y le contactaremos al ${callback}. ¿Es correcto?`
+    ),
+    nextStage: 'confirm_details',
+    endCall: false,
+  };
 }
 
 function dispositionResponse(state: TriageState): TriageResult {

@@ -975,6 +975,7 @@ export type Database = {
           created_at: string
           id: string
           metadata: Json | null
+          office_id: string | null
           status: string
           transcript: Json | null
           updated_at: string
@@ -987,6 +988,7 @@ export type Database = {
           created_at?: string
           id?: string
           metadata?: Json | null
+          office_id?: string | null
           status?: string
           transcript?: Json | null
           updated_at?: string
@@ -999,6 +1001,7 @@ export type Database = {
           created_at?: string
           id?: string
           metadata?: Json | null
+          office_id?: string | null
           status?: string
           transcript?: Json | null
           updated_at?: string
