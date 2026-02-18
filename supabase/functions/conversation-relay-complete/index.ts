@@ -387,6 +387,52 @@ serve(async (req) => {
         });
       }
 
+      // Send patient confirmation SMS for URGENT_CALLBACK
+      if (disposition === 'URGENT_CALLBACK' && callbackNumber) {
+        try {
+          const patientSmsBody = lang === 'es'
+            ? `Su mensaje ha sido enviado al ${provider.name}. Le devolverán la llamada pronto al ${formatPhoneForDisplay(callbackNumber)}. Si sus síntomas empeoran, vaya a la sala de emergencias más cercana o llame al 911.`
+            : `Your message has been sent to ${provider.name}. They'll call you back shortly at ${formatPhoneForDisplay(callbackNumber)}. If your symptoms worsen, please head to the nearest ER or call 911.`;
+
+          const twilioSidEnv = Deno.env.get('TWILIO_ACCOUNT_SID');
+          const twilioAuthEnv = Deno.env.get('TWILIO_AUTH_TOKEN');
+          const twilioPhoneEnv = Deno.env.get('TWILIO_PHONE_NUMBER');
+
+          if (twilioSidEnv && twilioAuthEnv && twilioPhoneEnv) {
+            const toNumber = callbackNumber.startsWith('+') ? callbackNumber : '+1' + callbackNumber.replace(/\D/g, '');
+            const patientSmsResult = await fetch(
+              `https://api.twilio.com/2010-04-01/Accounts/${twilioSidEnv}/Messages.json`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Basic ' + btoa(`${twilioSidEnv}:${twilioAuthEnv}`),
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ To: toNumber, From: twilioPhoneEnv, Body: patientSmsBody }),
+              }
+            );
+
+            const patientSmsJson = await patientSmsResult.json();
+
+            await supabase.from('notification_logs').insert({
+              notification_type: 'patient_confirmation_sms',
+              recipient_phone: callbackNumber,
+              office_id: officeId,
+              content: { sms_body: patientSmsBody, escalation_id: escalationId },
+              status: patientSmsResult.ok ? 'sent' : 'failed',
+              twilio_sid: patientSmsJson?.sid,
+              metadata: { workflow: 'patient_confirmation', escalation_id: escalationId, disposition, transport: 'conversation_relay' }
+            });
+
+            if (patientSmsResult.ok) {
+              console.log(`[${callSid}] Patient confirmation SMS sent to ${callbackNumber}`);
+            }
+          }
+        } catch (patientSmsError) {
+          console.error(`[${callSid}] Failed to send patient confirmation SMS:`, patientSmsError);
+        }
+      }
+
     } else {
       // NEXT_BUSINESS_DAY — log as non-escalation
       await supabase.from('notification_logs').insert({
