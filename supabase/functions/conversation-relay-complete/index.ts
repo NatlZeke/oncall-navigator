@@ -29,6 +29,7 @@ interface RelayCompletePayload {
     hasTraumaChemical?: boolean;
     isWorsening?: boolean;
     stabilityResponse?: string;
+    symptomOnset?: string;
     isPrescriptionRequest?: boolean;
     medicationRequested?: string;
     patientDoctor?: string;
@@ -309,6 +310,7 @@ serve(async (req) => {
             officeName,
             serviceLine,
             stabilityAssessment,
+            symptomOnset: intake.symptomOnset,
             patientLanguage,
           },
           assigned_provider_name: provider.name,

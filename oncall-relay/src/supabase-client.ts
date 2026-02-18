@@ -125,6 +125,7 @@ export async function saveCompletedIntake(state: TriageState): Promise<void> {
         hasTraumaChemical: state.intake.hasTraumaChemical,
         isWorsening: state.intake.isWorsening,
         stabilityResponse: state.intake.stabilityResponse,
+        symptomOnset: state.intake.symptomOnset,
         isPrescriptionRequest: state.intake.isPrescriptionRequest,
         medicationRequested: state.intake.medicationRequested,
         patientDoctor: state.intake.patientDoctor,

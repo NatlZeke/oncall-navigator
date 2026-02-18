@@ -6,7 +6,7 @@ export type TriageStage =
   | 'language_gate' | 'established_gate' | 'collect_name' | 'ask_dob'
   | 'ask_callback' | 'confirm_callback' | 'ask_patient_doctor' | 'ask_postop' | 'postop_complaint'
   | 'redflag_1' | 'redflag_2' | 'redflag_3' | 'redflag_4'
-  | 'brief_complaint' | 'stability_check'
+  | 'brief_complaint' | 'ask_onset' | 'stability_check' | 'confirm_details' | 'correct_details'
   | 'prescription_doctor' | 'prescription_name' | 'prescription_callback' | 'prescription_medication'
   | 'prescription_safety' | 'prescription_emergency_dob'
   | 'complete';
@@ -24,6 +24,7 @@ export interface IntakeData {
   hasTraumaChemical?: boolean;
   isWorsening?: boolean;
   stabilityResponse?: string;
+  symptomOnset?: string;
   isPrescriptionRequest?: boolean;
   medicationRequested?: string;
   safetyCheckCompleted?: boolean;
