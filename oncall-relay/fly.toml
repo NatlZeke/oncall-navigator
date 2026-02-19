@@ -1,4 +1,4 @@
-app = "oncall-relay"
+app = "oncall-navigator"
 primary_region = "dfw"
 
 [build]
