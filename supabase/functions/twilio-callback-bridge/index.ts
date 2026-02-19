@@ -176,7 +176,7 @@ async function initiateCallbackBridge(supabase: any, escalationId: string, overr
         payload: { reason: result.message || 'Twilio API error', leg: 'provider' }
       });
 
-      return { success: false, error: result.message || 'Failed to initiate call' };
+      return { success: false, error: 'Failed to initiate call' };
     }
 
     // Update with provider call SID and status
@@ -207,7 +207,7 @@ async function initiateCallbackBridge(supabase: any, escalationId: string, overr
       callback_failure_reason: errorMessage
     }).eq('id', escalationId);
 
-    return { success: false, error: errorMessage };
+    return { success: false, error: 'Unable to process callback request' };
   }
 }
 

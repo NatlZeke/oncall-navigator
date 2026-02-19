@@ -74,7 +74,7 @@ serve(async (req) => {
     if (escalationError || !escalation) {
       console.error('Escalation not found:', escalationError);
       return new Response(
-        JSON.stringify({ error: 'Escalation not found' }),
+        JSON.stringify({ error: 'Unable to process request' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -230,7 +230,7 @@ serve(async (req) => {
           });
 
           return new Response(
-            JSON.stringify({ error: 'Failed to initiate callback', details: result.message }),
+            JSON.stringify({ error: 'Failed to initiate callback' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -338,9 +338,8 @@ serve(async (req) => {
 
   } catch (error: unknown) {
     console.error('Error in doctor-callback:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({ error: 'Unable to process request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
