@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.conversation-relay-complete]
 verify_jwt = false
+
+[functions.line-health-check]
+verify_jwt = false
