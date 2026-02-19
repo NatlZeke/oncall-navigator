@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,21 +79,26 @@ serve(async (req) => {
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { conversationId, message, context } = await req.json();
-    const sanitizedMessage = sanitizeUserInput(message);
+    const requestSchema = z.object({
+      conversationId: z.string().uuid('Invalid conversationId format').optional().nullable(),
+      message: z.string().min(1, 'Message is required').max(2000, 'Message too long'),
+      context: z.object({
+        officeName: z.string().max(100).optional(),
+      }).passthrough().optional().nullable(),
+    });
 
-    // Validate conversationId if provided (must be UUID)
-    if (conversationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)) {
-      return new Response(JSON.stringify({ error: 'Invalid conversationId format' }),
+    const parseResult = requestSchema.safeParse(await req.json());
+    if (!parseResult.success) {
+      return new Response(JSON.stringify({ error: parseResult.error.issues[0]?.message || 'Invalid request data' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const { conversationId, message: rawMessage, context } = parseResult.data;
+    const sanitizedMessage = sanitizeUserInput(rawMessage);
+
     // Sanitize context object
-    if (context && typeof context === 'object') {
-      if (context.officeName && typeof context.officeName === 'string') {
-        context.officeName = context.officeName.substring(0, 100).replace(/[<>"'&]/g, '');
-      }
+    if (context?.officeName) {
+      context.officeName = context.officeName.replace(/[<>"'&]/g, '');
     }
     
     if (!sanitizedMessage) {

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,23 +74,24 @@ serve(async (req) => {
       );
     }
 
-    const { email, full_name, phone, role } = await req.json();
+    const requestSchema = z.object({
+      email: z.string().email('Invalid email format').max(255),
+      full_name: z.string().max(200).optional(),
+      phone: z.string().max(20).optional(),
+      role: z.enum(['admin', 'manager', 'provider', 'operator'] as const, {
+        errorMap: () => ({ message: 'Invalid role. Must be one of: admin, manager, provider, operator' })
+      }),
+    });
 
-    if (!email || !role) {
+    const parseResult = requestSchema.safeParse(await req.json());
+    if (!parseResult.success) {
       return new Response(
-        JSON.stringify({ error: "Email and role are required" }),
+        JSON.stringify({ error: parseResult.error.issues[0]?.message || 'Invalid request data' }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Validate role is a valid app_role
-    const validRoles = ['admin', 'manager', 'provider', 'scheduler', 'operator_readonly'];
-    if (!validRoles.includes(role)) {
-      return new Response(
-        JSON.stringify({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const { email, full_name, phone, role } = parseResult.data;
 
     // Create user with a temporary password (they'll need to reset)
     const tempPassword = crypto.randomUUID() + "Aa1!";
