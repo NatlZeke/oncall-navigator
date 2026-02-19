@@ -2,7 +2,7 @@ app = "oncall-navigator"
 primary_region = "dfw"
 
 [build]
-  dockerfile = "Dockerfile"
+  image = "registry.fly.io/oncall-navigator:deployment-0dba6c96fa37cc8a32e193a550a40d85"
 
 [env]
   PORT = "8080"
