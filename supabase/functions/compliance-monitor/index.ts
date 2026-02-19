@@ -223,7 +223,7 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error('Error in compliance-monitor:', error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: 'Unable to process request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

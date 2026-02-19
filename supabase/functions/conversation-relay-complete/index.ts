@@ -330,7 +330,7 @@ serve(async (req) => {
 
       if (escError) {
         console.error('Error creating escalation:', escError);
-        return new Response(JSON.stringify({ success: false, error: 'Failed to create escalation: ' + escError.message }), {
+        return new Response(JSON.stringify({ success: false, error: 'Failed to create escalation' }), {
           status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -477,9 +477,8 @@ serve(async (req) => {
     });
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in conversation-relay-complete:', error);
-    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
+    return new Response(JSON.stringify({ success: false, error: 'Unable to process request' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

@@ -212,7 +212,7 @@ serve(async (req) => {
         success: status === 'sent',
         status,
         sid: result?.sid,
-        error: status === 'failed' ? result?.message : null
+        error: status === 'failed' ? 'Failed to send notification' : null
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
