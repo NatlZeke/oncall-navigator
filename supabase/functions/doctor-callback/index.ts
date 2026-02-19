@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -55,14 +56,22 @@ serve(async (req) => {
     console.log('Authenticated provider:', user.id);
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    const { escalationId, action, ackType, notes } = await req.json();
+    const requestSchema = z.object({
+      escalationId: z.string().uuid('Invalid escalationId format'),
+      action: z.enum(['acknowledge', 'initiate_callback', 'resolve', 'advise_er']),
+      ackType: z.enum(['received', 'called_patient', 'advised_er', 'resolved', 'handed_off']).optional(),
+      notes: z.string().max(2000).optional(),
+    });
 
-    if (!escalationId) {
+    const parseResult = requestSchema.safeParse(await req.json());
+    if (!parseResult.success) {
       return new Response(
-        JSON.stringify({ error: 'Missing escalationId' }),
+        JSON.stringify({ error: parseResult.error.issues[0]?.message || 'Invalid request data' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const { escalationId, action, ackType, notes } = parseResult.data;
 
     // Get escalation details
     const { data: escalation, error: escalationError } = await supabaseAdmin

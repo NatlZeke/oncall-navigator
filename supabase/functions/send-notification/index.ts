@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,34 +46,26 @@ serve(async (req) => {
 
     console.log('Authenticated user:', user.id);
 
-    const { type, to, message, officeId, userId, metadata } = await req.json();
+    const requestSchema = z.object({
+      type: z.enum(['sms', 'call']),
+      to: z.string().regex(/^\+[1-9]\d{1,14}$/, 'Invalid phone number format. Use E.164 format (e.g., +15551234567)'),
+      message: z.string().min(1, 'Message is required').max(1600, 'Message too long'),
+      officeId: z.string().max(100).optional(),
+      userId: z.string().uuid().optional(),
+      metadata: z.record(z.unknown()).optional(),
+    });
+
+    const parseResult = requestSchema.safeParse(await req.json());
+    if (!parseResult.success) {
+      return new Response(
+        JSON.stringify({ error: parseResult.error.issues[0]?.message || 'Invalid request data' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { type, to, message, officeId, userId, metadata } = parseResult.data;
 
     console.log('Send notification request:', { type, to, officeId, userId, requestingUser: user.id });
-
-    // Validate required fields
-    if (!type || !to || !message) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: type, to, message' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Validate notification type
-    if (!['sms', 'call'].includes(type)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid notification type. Use "sms" or "call"' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Validate phone number format (basic E.164 validation)
-    const phoneRegex = /^\+[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(to)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid phone number format. Use E.164 format (e.g., +15551234567)' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Verify user has access to the specified office (if officeId provided)
     if (officeId) {

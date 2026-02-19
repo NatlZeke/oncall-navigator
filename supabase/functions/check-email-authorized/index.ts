@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,16 +72,19 @@ serve(async (req) => {
       },
     });
 
-    const { email } = await req.json();
+    const requestSchema = z.object({
+      email: z.string().email('Invalid email format').max(255),
+    });
 
-    if (!email) {
+    const parseResult = requestSchema.safeParse(await req.json());
+    if (!parseResult.success) {
       return new Response(
-        JSON.stringify({ authorized: false, error: "Email is required" }),
+        JSON.stringify({ authorized: false, error: parseResult.error.issues[0]?.message || 'Invalid request data' }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = parseResult.data.email.trim().toLowerCase();
 
     // Check if email is in authorized list - only fetch minimal fields needed
     // Do NOT return PII (full_name, phone) to prevent information disclosure
