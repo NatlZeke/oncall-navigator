@@ -453,6 +453,39 @@ export type Database = {
         }
         Relationships: []
       }
+      line_health_checks: {
+        Row: {
+          alert_sent: boolean
+          check_type: string
+          created_at: string
+          details: Json | null
+          id: string
+          message: string
+          office_id: string | null
+          status: string
+        }
+        Insert: {
+          alert_sent?: boolean
+          check_type: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message: string
+          office_id?: string | null
+          status?: string
+        }
+        Update: {
+          alert_sent?: boolean
+          check_type?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message?: string
+          office_id?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       notification_logs: {
         Row: {
           content: Json | null
@@ -1136,6 +1169,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_old_health_checks: { Args: never; Returns: undefined }
       get_all_profiles_with_audit: {
         Args: { context?: string }
         Returns: {
