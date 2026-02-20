@@ -1,0 +1,25 @@
+name: Deploy OnCall Relay to Fly.io
+
+on:
+  push:
+    paths:
+      - 'oncall-relay/**'
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Relay Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Fly.io CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only --config oncall-relay/fly.toml --dockerfile oncall-relay/Dockerfile
+        working-directory: oncall-relay
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
