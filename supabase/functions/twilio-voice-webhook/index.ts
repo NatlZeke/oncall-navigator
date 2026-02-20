@@ -2086,6 +2086,74 @@ function generateCallbackNumberQuestion(baseUrl: string, lang: Lang = 'en'): str
 </Response>`;
 }
 
+function generateCallbackWithDefault(callerPhone: string | undefined, baseUrl: string, lang: Lang = 'en'): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const phone = callerPhone || '';
+  const [intro, confirm, press] = lang === 'es'
+    ? [`¿Le devolvemos la llamada al ${escapeXml(phone)}?`, 'Oprima 1 para sí, o diga un número diferente.', 'Oprima 2 para ingresar otro número.']
+    : [`Should we call you back at ${escapeXml(phone)}?`, 'Press 1 for yes, or say a different number.', 'Press 2 to enter a different number.'];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${intro}</Say>
+    <Say voice="${v}">${confirm}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateCallbackConfirmation(callbackNumber: string | undefined, baseUrl: string, lang: Lang = 'en'): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const num = callbackNumber || '';
+  const [confirm, press] = lang === 'es'
+    ? [`¿Es correcto el número ${escapeXml(num)}?`, 'Oprima 1 para confirmar, o 2 para ingresar otro número.']
+    : [`Is ${escapeXml(num)} correct?`, 'Press 1 to confirm, or 2 to enter a different number.'];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST"${gl}>
+    <Say voice="${v}">${confirm}</Say>
+    <Say voice="${v}">${press}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
+function generateAskPatientDoctorQuestion(
+  providerDirectory: Record<string, { name: string; phone: string }>,
+  baseUrl: string,
+  lang: Lang = 'en'
+): string {
+  const v = getVoice(lang);
+  const gl = gatherLang(lang);
+  const providerKeywords = new Map<string, string[]>();
+  for (const [keyword, provider] of Object.entries(providerDirectory)) {
+    const existing = providerKeywords.get(provider.name) || [];
+    existing.push(keyword);
+    providerKeywords.set(provider.name, existing);
+  }
+  const hintsList: string[] = [];
+  for (const keywords of providerKeywords.values()) {
+    hintsList.push(...keywords.slice(0, 2));
+  }
+  hintsList.push(lang === 'es' ? "no sé" : "don't know");
+  const hints = hintsList.join(', ');
+  const uniqueNames = [...providerKeywords.keys()];
+  const nameList = uniqueNames.length <= 4 ? uniqueNames.join(', ') : uniqueNames.slice(0, 4).join(', ');
+  const msg = lang === 'es'
+    ? `¿Quién es su médico en nuestra oficina? Por ejemplo, ${nameList}. Si no está seguro, diga no sé.`
+    : `Who is your doctor at our office? For example, ${nameList}. If you're not sure, just say I don't know.`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Gather input="speech" timeout="8" speechTimeout="3" action="${baseUrl}/functions/v1/twilio-voice-webhook" method="POST" hints="${escapeXml(hints)}"${gl}>
+    <Say voice="${v}">${msg}</Say>
+  </Gather>
+  <Redirect>${baseUrl}/functions/v1/twilio-voice-webhook</Redirect>
+</Response>`;
+}
+
 function generatePrescriptionDoctorQuestion(
   providerDirectory: Record<string, { name: string; phone: string }>,
   baseUrl: string,

@@ -365,7 +365,7 @@ serve(async (req) => {
 
     // Periodic cleanup (run every ~100th invocation randomly to avoid separate cron)
     if (Math.random() < 0.01) {
-      await supabase.rpc("cleanup_old_health_checks").catch(() => {});
+      try { await supabase.rpc("cleanup_old_health_checks"); } catch { /* ignore */ }
     }
 
     // Also log to webhook_health_logs for consistency
