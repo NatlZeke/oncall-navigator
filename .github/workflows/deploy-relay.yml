@@ -23,4 +23,3 @@ jobs:
         working-directory: oncall-relay
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
