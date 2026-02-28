@@ -1,3 +1,0 @@
-# This fly.toml is intentionally left empty.
-# The active relay server is deployed from oncall-relay/fly.toml (app = "oncall-navigator").
-# Do not deploy from the project root — deploy from the oncall-relay/ subdirectory.
