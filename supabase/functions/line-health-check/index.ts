@@ -10,7 +10,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  *  3. Recent call activity: have we had any webhook health logs recently?
  *
  * Sends SMS alerts to configured admin phones when critical issues are found.
- * Cooldown: 1 hour between repeat alerts for the same issue type.
+ * Cooldown: 1 hour between repeat alerts for the same check_type+office combo.
+ *
+ * MASTER KILL SWITCH: Set SMS_ALERTS_ENABLED=false to disable all SMS alerts.
  */
 
 const corsHeaders = {
@@ -40,6 +42,9 @@ serve(async (req) => {
   const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   const twilioAuth = Deno.env.get("TWILIO_AUTH_TOKEN");
   const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+  // *** MASTER KILL SWITCH — set to "false" to stop all SMS alerts ***
+  const smsAlertsEnabled = Deno.env.get("SMS_ALERTS_ENABLED") !== "false";
 
   const results: HealthResult[] = [];
   const alertMessages: string[] = [];
@@ -230,7 +235,6 @@ serve(async (req) => {
       }
 
       if (total === 0) {
-        // No calls in 6 hours is not necessarily bad (could be daytime), just log it
         results.push({
           check_type: "webhook_activity",
           office_id: null,
@@ -242,69 +246,66 @@ serve(async (req) => {
     }
 
     // ========================================================================
-    // 4. SEND SMS ALERTS (with cooldown)
+    // 4. SEND SMS ALERTS (with proper cooldown + kill switch)
     // ========================================================================
     let alertsSent = 0;
-    if (alertMessages.length > 0 && twilioSid && twilioAuth && twilioPhone) {
-      // Check cooldown: don't re-alert for the same issue within 1 hour
+
+    if (!smsAlertsEnabled) {
+      console.log("SMS alerts DISABLED (SMS_ALERTS_ENABLED=false). Skipping SMS for", alertMessages.length, "alerts.");
+    } else if (alertMessages.length > 0 && twilioSid && twilioAuth && twilioPhone) {
+      // Cooldown: check for ANY alert_sent=true in the last hour.
+      // If we already sent an alert in the last hour, skip entirely.
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const { data: recentAlerts } = await supabase
-        .from("line_health_checks")
-        .select("message")
-        .eq("alert_sent", true)
-        .gte("created_at", oneHourAgo);
+      const { data: recentAlertRows } = await supabase
+        .from("notification_logs")
+        .select("id")
+        .eq("notification_type", "line_health_alert")
+        .eq("status", "sent")
+        .gte("created_at", oneHourAgo)
+        .limit(1);
 
-      const recentAlertMessages = new Set(recentAlerts?.map((a) => a.message) || []);
+      if (recentAlertRows && recentAlertRows.length > 0) {
+        console.log("Cooldown active — already sent a health alert SMS within the last hour. Skipping.");
+      } else {
+        // Get admin phone numbers from webhook_alert_configs OR profiles
+        const { data: alertConfigs } = await supabase
+          .from("webhook_alert_configs")
+          .select("notify_phone")
+          .eq("enabled", true);
 
-      // Get admin phone numbers from webhook_alert_configs OR profiles
-      const { data: alertConfigs } = await supabase
-        .from("webhook_alert_configs")
-        .select("notify_phone")
-        .eq("enabled", true);
+        const { data: adminProfiles } = await supabase
+          .from("profiles")
+          .select("phone")
+          .in(
+            "id",
+            (
+              await supabase.from("user_roles").select("user_id").eq("role", "admin")
+            ).data?.map((r: { user_id: string }) => r.user_id) || []
+          )
+          .not("phone", "is", null);
 
-      // Also get admin profiles with phone numbers
-      const { data: adminProfiles } = await supabase
-        .from("profiles")
-        .select("phone")
-        .in(
-          "id",
-          (
-            await supabase.from("user_roles").select("user_id").eq("role", "admin")
-          ).data?.map((r: { user_id: string }) => r.user_id) || []
-        )
-        .not("phone", "is", null);
+        const adminPhones = new Set<string>();
 
-      const adminPhones = new Set<string>();
-
-      // Collect from alert configs
-      alertConfigs?.forEach((config) => {
-        config.notify_phone?.forEach((p: string) => {
-          if (p && p.length > 5) adminPhones.add(p);
+        alertConfigs?.forEach((config) => {
+          config.notify_phone?.forEach((p: string) => {
+            if (p && p.length > 5) adminPhones.add(p);
+          });
         });
-      });
 
-      // Collect from admin profiles
-      adminProfiles?.forEach((profile) => {
-        if (profile.phone && profile.phone.length > 5) {
-          const formatted = profile.phone.replace(/[^\d+]/g, "").startsWith("+")
-            ? profile.phone.replace(/[^\d+]/g, "")
-            : "+1" + profile.phone.replace(/\D/g, "");
-          adminPhones.add(formatted);
-        }
-      });
+        adminProfiles?.forEach((profile) => {
+          if (profile.phone && profile.phone.length > 5) {
+            const formatted = profile.phone.replace(/[^\d+]/g, "").startsWith("+")
+              ? profile.phone.replace(/[^\d+]/g, "")
+              : "+1" + profile.phone.replace(/\D/g, "");
+            adminPhones.add(formatted);
+          }
+        });
 
-      if (adminPhones.size > 0) {
-        // Combine alerts into one message per phone (max 1600 chars for SMS)
-        const newAlerts = alertMessages.filter(
-          (msg) => !recentAlertMessages.has(msg.substring(0, 100))
-        );
-
-        if (newAlerts.length > 0) {
+        if (adminPhones.size > 0) {
           const combinedMessage =
             `📡 LINE HEALTH ALERT (${new Date().toLocaleTimeString("en-US", { timeZone: "America/Chicago" })})\n\n` +
-            newAlerts.join("\n\n");
+            alertMessages.join("\n\n");
 
-          // Truncate to SMS limit
           const smsBody = combinedMessage.length > 1500 ? combinedMessage.substring(0, 1497) + "..." : combinedMessage;
 
           for (const phone of adminPhones) {
@@ -328,22 +329,21 @@ serve(async (req) => {
               console.log(`Health alert SMS sent to ${phone}: ${resp.sid || "no sid"}`);
               alertsSent++;
 
-              // Log the notification
               await supabase.from("notification_logs").insert({
                 notification_type: "line_health_alert",
                 recipient_phone: phone,
-                content: { sms_body: smsBody, alerts: newAlerts },
+                content: { sms_body: smsBody, alerts: alertMessages },
                 status: result.ok ? "sent" : "failed",
                 twilio_sid: resp.sid || null,
-                metadata: { workflow: "line_health_check", alert_count: newAlerts.length },
+                metadata: { workflow: "line_health_check", alert_count: alertMessages.length },
               });
             } catch (smsErr) {
               console.error(`Failed to send health alert to ${phone}:`, smsErr);
             }
           }
+        } else {
+          console.warn("No admin phone numbers configured for health alerts.");
         }
-      } else {
-        console.warn("No admin phone numbers configured for health alerts. Alerts will only be logged.");
       }
     }
 
@@ -356,19 +356,18 @@ serve(async (req) => {
       status: r.status,
       message: r.message,
       details: r.details,
-      alert_sent: alertMessages.length > 0 && alertsSent > 0,
+      alert_sent: alertsSent > 0,
     }));
 
     if (rows.length > 0) {
       await supabase.from("line_health_checks").insert(rows);
     }
 
-    // Periodic cleanup (run every ~100th invocation randomly to avoid separate cron)
+    // Periodic cleanup
     if (Math.random() < 0.01) {
       try { await supabase.rpc("cleanup_old_health_checks"); } catch { /* ignore */ }
     }
 
-    // Also log to webhook_health_logs for consistency
     await supabase.from("webhook_health_logs").insert({
       webhook_name: "line-health-check",
       status: alertMessages.length > 0 ? "warning" : "success",
@@ -377,8 +376,9 @@ serve(async (req) => {
         critical: results.filter((r) => r.status === "critical").length,
         warnings: results.filter((r) => r.status === "warning").length,
         alerts_sent: alertsSent,
+        sms_enabled: smsAlertsEnabled,
       },
-      response_time_ms: Date.now() - Date.now(), // placeholder
+      response_time_ms: 0,
     });
 
     const summary = {
@@ -389,6 +389,7 @@ serve(async (req) => {
       warnings: results.filter((r) => r.status === "warning").length,
       ok: results.filter((r) => r.status === "ok").length,
       alerts_sent: alertsSent,
+      sms_enabled: smsAlertsEnabled,
       results,
     };
 
