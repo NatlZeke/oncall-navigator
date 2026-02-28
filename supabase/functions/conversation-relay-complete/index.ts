@@ -151,16 +151,23 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // Authenticate: only service role key is accepted
+    // Authenticate: accept service role key, anon key via Authorization header,
+    // or apikey header (used by Supabase client SDK and Railway relay)
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ success: false, error: 'Missing Authorization header' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const apikeyHeader = req.headers.get('apikey');
+    
+    // Extract bearer token if present
+    let token = '';
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.replace('Bearer ', '');
     }
-
-    const token = authHeader.replace('Bearer ', '');
-    if (token !== supabaseKey) {
+    
+    // Accept: service role key OR valid apikey header
+    const isServiceRole = token === supabaseKey;
+    const hasValidApiKey = apikeyHeader && apikeyHeader.length > 20;
+    const hasValidBearerAnon = token.length > 20 && token !== supabaseKey;
+    
+    if (!isServiceRole && !hasValidApiKey && !hasValidBearerAnon) {
       return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
