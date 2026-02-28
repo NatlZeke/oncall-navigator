@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.line-health-check]
 verify_jwt = false
+
+[functions.get-oncall-info]
+verify_jwt = false
