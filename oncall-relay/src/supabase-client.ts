@@ -1,14 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
 import type { TriageState } from './types.js';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
 /**
- * Queries Supabase for office config and on-call provider info based on the called phone number.
- * Used to initialize TriageState when a new WebSocket connection arrives.
+ * Calls the get-oncall-info edge function to look up office config and on-call provider.
+ * This replaces direct database queries — no service role key needed.
  */
 export async function getOnCallInfo(calledPhone: string): Promise<{
   officeId: string;
@@ -19,80 +16,25 @@ export async function getOnCallInfo(calledPhone: string): Promise<{
   requiresPatientDoctorConfirmation: boolean;
 } | null> {
   try {
-    // Look up office by phone number
-    const { data: office, error: officeError } = await supabase
-      .from('offices')
-      .select('id, name, spanish_enabled, use_conversation_relay')
-      .contains('phone_numbers', [calledPhone])
-      .eq('is_active', true)
-      .limit(1)
-      .single();
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/get-oncall-info`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ calledPhone }),
+      }
+    );
 
-    if (officeError || !office) {
-      console.error(`No office found for phone ${calledPhone}:`, officeError);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error(`get-oncall-info failed (${response.status}):`, err);
       return null;
     }
 
-    // Look up today's on-call assignment
-    const today = new Date().toISOString().split('T')[0];
-    const { data: assignment } = await supabase
-      .from('oncall_assignments')
-      .select('*')
-      .eq('office_id', office.id)
-      .eq('assignment_date', today)
-      .eq('status', 'active')
-      .single();
-
-    const onCallProvider = assignment
-      ? {
-          name: assignment.provider_name,
-          phone: assignment.provider_phone.replace(/[^\d+]/g, '').startsWith('+')
-            ? assignment.provider_phone.replace(/[^\d+]/g, '')
-            : '+1' + assignment.provider_phone.replace(/\D/g, ''),
-        }
-      : { name: 'On-Call Provider', phone: '+15125551001' };
-
-    // Check routing type — only ask for patient's doctor when routing is 'own_patients_only'
-    let requiresPatientDoctorConfirmation = false;
-    if (assignment?.provider_user_id) {
-      const { data: routingConfig } = await supabase
-        .from('provider_routing_config')
-        .select('routing_type')
-        .eq('provider_user_id', assignment.provider_user_id)
-        .eq('is_active', true)
-        .single();
-      requiresPatientDoctorConfirmation = routingConfig?.routing_type === 'own_patients_only';
-    }
-
-    // Look up provider routing config for provider directory
-    const { data: configs } = await supabase
-      .from('provider_routing_config')
-      .select('*')
-      .eq('office_id', office.id)
-      .eq('is_active', true);
-
-    const providerDirectory: Record<string, { name: string; phone: string }> = {};
-    if (configs) {
-      for (const config of configs) {
-        const formattedPhone = config.provider_phone.replace(/[^\d+]/g, '').startsWith('+')
-          ? config.provider_phone.replace(/[^\d+]/g, '')
-          : '+1' + config.provider_phone.replace(/\D/g, '');
-        const provider = { name: config.provider_name, phone: formattedPhone };
-        const keywords: string[] = config.match_keywords || config.provider_name.toLowerCase().split(/\s+/);
-        for (const keyword of keywords) {
-          providerDirectory[keyword.toLowerCase()] = provider;
-        }
-      }
-    }
-
-    return {
-      officeId: office.id,
-      officeName: office.name,
-      spanishEnabled: office.spanish_enabled ?? false,
-      onCallProvider,
-      providerDirectory,
-      requiresPatientDoctorConfirmation,
-    };
+    return await response.json();
   } catch (err) {
     console.error('Failed to get on-call info:', err);
     return null;
@@ -112,7 +54,7 @@ export async function saveCompletedIntake(state: TriageState): Promise<void> {
       officeId: state.officeId,
       officeName: state.officeName,
       lang: state.lang,
-      serviceLine: 'General Ophthalmology', // Default for Hill Country Eye Center
+      serviceLine: 'General Ophthalmology',
       intake: {
         patientName: state.intake.patientName,
         dateOfBirth: state.intake.dateOfBirth,
@@ -144,7 +86,7 @@ export async function saveCompletedIntake(state: TriageState): Promise<void> {
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${supabaseAnonKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
