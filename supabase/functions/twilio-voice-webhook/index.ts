@@ -359,7 +359,7 @@ function hintsYesNo(lang: Lang): string {
 // MAINTENANCE MODE — set to true to reject all calls immediately
 // This prevents Twilio credit usage when the relay server is down.
 // ============================================================================
-const MAINTENANCE_MODE = true;
+const MAINTENANCE_MODE = false;
 
 // ============================================================================
 // MAIN HANDLER
