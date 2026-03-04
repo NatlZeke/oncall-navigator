@@ -1,1 +1,0 @@
-UPDATE offices SET conversation_relay_url = 'wss://oncall-navigator-production2.up.railway.app/intake' WHERE id IN ('office-1', 'office-2');
