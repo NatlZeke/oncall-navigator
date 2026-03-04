@@ -356,6 +356,12 @@ function hintsYesNo(lang: Lang): string {
 }
 
 // ============================================================================
+// MAINTENANCE MODE — set to true to reject all calls immediately
+// This prevents Twilio credit usage when the relay server is down.
+// ============================================================================
+const MAINTENANCE_MODE = true;
+
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 serve(async (req) => {
@@ -363,6 +369,19 @@ serve(async (req) => {
   
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // If maintenance mode is on, return a brief message and hang up
+  if (MAINTENANCE_MODE) {
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="${POLLY_VOICE_EN}">We're sorry, our after-hours service is temporarily unavailable. If this is a medical emergency, please hang up and dial 9 1 1. Otherwise, please call back during normal business hours. Thank you.</Say>
+  <Say voice="${POLLY_VOICE_ES}">Lo sentimos, nuestro servicio fuera de horario no está disponible temporalmente. Si esto es una emergencia médica, cuelgue y marque el 9 1 1. De lo contrario, llame durante el horario normal. Gracias.</Say>
+  <Hangup/>
+</Response>`;
+    return new Response(twiml, {
+      headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
+    });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
